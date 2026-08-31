@@ -1,10 +1,11 @@
 import axios from "axios";
 import { BASE_URL } from "./constant";
 
-export const getAllPaymentMethod = async () => {
+export const getAllPaymentMethod = async (params = {}) => {
   const response = await axios.get(
     `${BASE_URL}/api/v1/payment/getAllPaymentMethod`,
     {
+      params,
       withCredentials: true,
     }
   );
@@ -14,6 +15,17 @@ export const getAllPaymentMethod = async () => {
 export const createPaymentMethod = async (data) => {
   const response = await axios.post(
     `${BASE_URL}/api/v1/payment/createPaymentMethod`,
+    data,
+    {
+      withCredentials: true,
+    }
+  );
+  return response.data;
+};
+
+export const updatePaymentMethod = async (id, data) => {
+  const response = await axios.put(
+    `${BASE_URL}/api/v1/payment/updatePaymentMethod/${id}`,
     data,
     {
       withCredentials: true,

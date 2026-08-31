@@ -34,6 +34,7 @@ import donwloadRoutes from "./routes/download.route.js";
 import stackTraceSkuRoutes from "./routes/stackTrace.route.js";
 import { midtransWebhookRouter } from "./routes/paymentMethod.route.js";
 import paymentMethodRoutes from "./routes/paymentMethod.route.js";
+import soapRoutes from "./routes/soap.route.js";
 
 const app = express();
 
@@ -121,6 +122,7 @@ app.use("/api/v1/inventoryStat", inventoryStatRoute);
 app.use("/api/v1/payment", paymentMethodRoutes);
 app.use("/api/v1/dashboard", salesReportRoutes);
 app.use("/api/v1/admin", adminRoutes);
+app.use("/api/v1/soap", soapRoutes);
 app.use("/api/v1/stackTraceSku", stackTraceSkuRoutes);
 
 const port = process.env.PORT;

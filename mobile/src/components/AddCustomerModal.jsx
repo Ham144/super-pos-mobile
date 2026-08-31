@@ -65,10 +65,10 @@ const CustomerFormModal = ({
   const handleSubmit = async () => {
     if (customerDialogPurpose === enumCustomerDialog.VOUCHER) {
       // Validate email
-      if (!customerEmail) {
+      if (!customerEmail && !customerPhone) {
         Alert.alert(
-          "Email Diperlukan",
-          "Email wajib diisi untuk menyimpan voucher customer"
+          "Email/telp salah satu diperlukan",
+          "Email atau nomor telp wajib di isi"
         );
         return;
       }

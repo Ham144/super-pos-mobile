@@ -20,10 +20,6 @@
       },
       "permissions": [
         "android.permission.INTERNET",
-        "android.permission.WRITE_EXTERNAL_STORAGE",
-        "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.INTERNET",
-        "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.READ_EXTERNAL_STORAGE"
       ],
       "runtimeVersion": "1.0.0",
@@ -44,7 +40,7 @@
         }
       ]
     ],
-    "name": "CSI POS Internal",
+    "name": "CSI POS",
     "slug": "csi-pos-internal",
     "newArchEnabled": true,
     "extra": {

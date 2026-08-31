@@ -17,13 +17,11 @@ const StackTraceSkuSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
-
     category: {
       type: String,
       enum: ["increase", "decrease", "spawn", "other"],
       default: "other",
     },
-
     prevQuantity: {
       type: Number,
     },

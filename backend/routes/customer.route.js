@@ -30,7 +30,6 @@ router.put("/editCustomer/:id", async (req, res) => {
       $set: {
         name: req.body.name,
         telepon: req.body.telepon,
-        email: req.body.email,
         targetHargaPenjualan: req.body.targetHargaPenjualan
           ? parseFloat(req.body.targetHargaPenjualan)
           : undefined,

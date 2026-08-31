@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo, lazy, Suspense } from "react";
 import MenuNavigation from "../components/MenuNavigation";
-import { mockPages } from "../api/constant";
+import { APP_NAME, mockPages, APP_DESC } from "../api/constant";
 
 import {
   Search,
@@ -24,7 +24,6 @@ import {
   MapPin,
   ExternalLink,
 } from "lucide-react";
-import toast from "react-hot-toast";
 
 // Lazy load components
 const DashboardPreview = lazy(() => import("../components/DashboardPreview"));
@@ -111,7 +110,7 @@ const Home = () => {
   const navigateToPage = useCallback((path) => {
     window.location.href = path;
   }, []);
-
+  
   const handleKeyDown = useCallback(
     (e) => {
       if (!searchResults.length) return;
@@ -214,12 +213,12 @@ const Home = () => {
                     />
                   </div>
                 </div>
-
+                
                 <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-4 tracking-tight">
-                  CSI SUPER POS
+                  {APP_NAME}
                 </h1>
                 <p className="text-xl md:text-2xl text-blue-100 mb-8 max-w-3xl mx-auto">
-                  Sistem POS by CSI untuk penjualan di outlet dan event besar Terintegrasi
+                  {APP_DESC}
                 </p>
               </div>
             </div>

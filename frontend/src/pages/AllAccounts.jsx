@@ -28,6 +28,7 @@ import {
   ShieldCheck,
   Ban,
   ShieldX,
+  BadgeInfo,
 } from "lucide-react";
 
 const AllAccounts = () => {
@@ -252,33 +253,39 @@ const AllAccounts = () => {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-gray-800">
-                Manajemen Akun
+                Manajemen Akun Login
               </h1>
               <p className="text-sm text-gray-500 mt-1">
-                Kelola semua akun pengguna, SPG, dan akses mereka
+                Akun di halaman ini bersifat stateful: dipakai untuk login,
+                session, role, dan akses. SPG dipindahkan ke menu SPG
+                Reference karena hanya data referensi stateless.
               </p>
             </div>
           </div>
 
           {/* Stats Cards */}
-          <div className="flex gap-3">
-            <div className="bg-gradient-to-br from-blue-950 to-blue-600 rounded-xl px-4 py-2 text-white shadow-lg">
-              <p className="text-xs text-blue-100">Total Akun</p>
-              <p className="text-xl font-bold">{filteredAccounts.length}</p>
-            </div>
-            <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl px-4 py-2 text-white shadow-lg">
-              <p className="text-xs text-green-100">Kasir</p>
-              <p className="text-xl font-bold">
-                {filteredAccounts.filter((a) => a.type !== "SPG").length}
-              </p>
-            </div>
-            <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl px-4 py-2 text-white shadow-lg">
-              <p className="text-xs text-purple-100">SPG</p>
-              <p className="text-xl font-bold">
-                {filteredAccounts.filter((a) => a.type === "SPG").length}
-              </p>
-            </div>
-          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
+                    <div className="flex items-center gap-2 text-blue-700 font-semibold mb-2">
+                      <Shield className="w-4 h-4" />
+                      Stateful
+                    </div>
+                    <p className="text-sm text-gray-700">
+                      Akun login yang benar-benar masuk ke session aplikasi.
+                      Dipakai untuk user, kasir, admin, dan role lain.
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4">
+                    <div className="flex items-center gap-2 text-indigo-700 font-semibold mb-2">
+                      <BadgeInfo className="w-4 h-4" />
+                      Stateless
+                    </div>
+                    <p className="text-sm text-gray-700">
+                      SPG hanya data referensi. Bisa dibuat, diubah, dinonaktifkan,
+                      tetapi tidak dipakai untuk login, <a className="link" href="/spg_reference">spg reference</a>
+                    </p>
+                  </div>
+                </div>
         </div>
       </div>
 

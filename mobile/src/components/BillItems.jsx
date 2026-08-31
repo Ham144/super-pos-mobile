@@ -1,4 +1,4 @@
-import React, { useCallback, memo } from "react";
+import  { useCallback, memo } from "react";
 import { View, Text, FlatList, StyleSheet, Pressable } from "react-native";
 import { CircleX, ArrowBigRightDash, Pencil } from "lucide-react-native";
 import { useCurrentBill } from "../store";

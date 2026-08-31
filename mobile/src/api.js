@@ -36,6 +36,18 @@ const getMobileAuthHeaders = async () => {
   return { mobile: `Bearer ${token}` };
 };
 
+export const getPrinterConfigs = async () => {
+  const response = await axios.get(
+    `${await getBaseUrl()}/api/v1/printer/getAllPrinter`,
+    {
+      headers: await getMobileAuthHeaders(),
+      timeout: 30000,
+    },
+  );
+
+  return response?.data?.data || [];
+};
+
 export const createMidtransPayment = async (invoiceId) => {
   const response = await axios.post(
     `${await getBaseUrl()}/api/v1/payment/midtrans/transaction`,
@@ -490,7 +502,6 @@ export const syncDiskonPromoVoucherInventories = async (isOnline) => {
           terakhirSync: new Date(),
         };
       });
-      console.log("initialPromo", initialPromo.length);
       data.newPromoData = initialPromo;
       console.log("Initialized promo data ✅");
     }
@@ -2041,10 +2052,59 @@ export const printCetakHelper = async (
 };
 
 const getDefaultPrinterConfig = async () => {
+  const normalizePrinterConfig = (config) => ({
+    ...config,
+    ipPrinter: config?.ipPrinter || "",
+    tipePrinter: config?.tipePrinter || "",
+    portPrinter: String(config?.portPrinter || config?.port || ""),
+  });
+
   const raw = await AsyncStorage.getItem("printerConfigs");
-  if (!raw) return null;
-  const multiConfig = JSON.parse(raw);
-  return multiConfig?.find((config) => config.isDefault) || null;
+  if (raw) {
+    try {
+      const multiConfig = JSON.parse(raw);
+      const defaultConfig =
+        multiConfig?.find((config) => config.isDefault) ||
+        multiConfig?.[0] ||
+        null;
+
+      if (defaultConfig) {
+        return normalizePrinterConfig(defaultConfig);
+      }
+    } catch (error) {
+      console.log("Gagal membaca printer configs lokal", error);
+    }
+  }
+
+  try {
+    const printers = await getPrinterConfigs();
+    if (!printers.length) {
+      return null;
+    }
+
+    const normalizedPrinters = printers.map((printer) =>
+      normalizePrinterConfig(printer),
+    );
+    const defaultIndex =
+      normalizedPrinters.findIndex((printer) => printer.isDefault) >= 0
+        ? normalizedPrinters.findIndex((printer) => printer.isDefault)
+        : 0;
+
+    const printersToStore = normalizedPrinters.map((printer, index) => ({
+      ...printer,
+      isDefault: index === defaultIndex,
+    }));
+
+    await AsyncStorage.setItem(
+      "printerConfigs",
+      JSON.stringify(printersToStore),
+    );
+
+    return printersToStore[defaultIndex];
+  } catch (error) {
+    console.log("Gagal mengambil printer configs dari server", error);
+    return null;
+  }
 };
 
 const sendRawPrintMessage = (config, message) => {
@@ -2498,6 +2558,44 @@ export const login = async (username, password) => {
       );
     } else {
       // Error in request setup
+      throw new Error("Terjadi kesalahan saat memproses permintaan");
+    }
+  }
+};
+
+export const loginLdap = async (username, password) => {
+  try {
+    const body = {
+      username,
+      password,
+    };
+
+    const response = await axios.post(
+      `${await getBaseUrl()}/api/v1/auth/ldapMobile`,
+      body,
+    );
+
+    return response.data;
+  } catch (error) {
+    if (error.response) {
+      if (error.response.status === 401 || error.response.status === 400) {
+        throw new Error(
+          error.response.data?.message || "Username atau password LDAP salah",
+        );
+      } else if (error.response.status === 404) {
+        throw new Error(
+          "Server tidak ditemukan. Periksa koneksi atau URL server",
+        );
+      } else {
+        throw new Error(
+          error.response.data?.message || "Terjadi kesalahan saat login LDAP",
+        );
+      }
+    } else if (error.request) {
+      throw new Error(
+        "Tidak dapat terhubung ke server. Periksa koneksi internet Anda",
+      );
+    } else {
       throw new Error("Terjadi kesalahan saat memproses permintaan");
     }
   }

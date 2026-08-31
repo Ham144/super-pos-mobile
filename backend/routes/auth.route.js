@@ -1,10 +1,12 @@
 import { Router } from "express";
+import LdapClient from "ldapjs-client";
 import generateTokenJWT from "../utils/generateTokenJWT.js";
 import generateTokenMobile from "../utils/generateTokenMobile.js";
 import UserRefrensi from "../models/User.model.js";
 import Outlet from "../models/Outlet.model.js";
 import bcrypt from "bcryptjs";
 import authorize from "../middlewares/authorize.js";
+import SystemConfig from "../models/SystemConfig.model.js";
 
 const router = Router();
 
@@ -36,7 +38,6 @@ router.post("/login", async (req, res) => {
 
     const token = await generateTokenJWT(userDB._id);
 
-
     // Set cookie di sini
     res.cookie("token", token, {
       httpOnly: true, // agar tidak bisa diakses dari client-side JS
@@ -50,16 +51,16 @@ router.post("/login", async (req, res) => {
       data: sanitizedUser,
     });
   } catch (error) {
-    return res.status(500).json({ message: JSON.stringify(error) });
+    return res.status(500).json({
+      message: "Gagal login, silakan coba lagi.",
+      error: error.message,
+    });
   }
 });
 
-// Add a function to generate a unique kodeKasir
 const generateUniqueKodeKasir = async (username) => {
-  // Extract first 2 characters from username and capitalize them
   let baseCode = username.substring(0, 2).toUpperCase();
 
-  // Add a random digit or letter to make it 3 characters
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   let isUnique = false;
   let kodeKasir = "";
@@ -69,13 +70,11 @@ const generateUniqueKodeKasir = async (username) => {
     const randomChar = chars.charAt(Math.floor(Math.random() * chars.length));
     kodeKasir = baseCode + randomChar;
 
-    // Check if this code already exists
     const existingUser = await UserRefrensi.findOne({ kodeKasir });
     if (!existingUser) {
       isUnique = true;
     } else {
       attempts++;
-      // If we've tried many times with the first 2 chars, try with different base
       if (attempts > 20) {
         baseCode =
           username.substring(0, 1).toUpperCase() +
@@ -84,7 +83,6 @@ const generateUniqueKodeKasir = async (username) => {
     }
   }
 
-  // If we couldn't find a unique code after many attempts, generate a completely random one
   if (!isUnique) {
     while (!isUnique) {
       kodeKasir = "";
@@ -101,13 +99,179 @@ const generateUniqueKodeKasir = async (username) => {
   return kodeKasir;
 };
 
+const authenticateLdapCredentials = async (usernameRaw, password) => {
+  if (!usernameRaw || !password) {
+    const error = new Error("perlu username dan password");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const username = usernameRaw.toLowerCase().trim();
+  const systemConfig = await SystemConfig.findById("global").lean();
+  if (
+    !systemConfig?.AD_HOST ||
+    !systemConfig?.AD_DOMAIN ||
+    !systemConfig?.AD_BASE_DN
+  ) {
+    const error = new Error("Konfigurasi Active Directory belum lengkap");
+    error.statusCode = 500;
+    throw error;
+  }
+
+  let client;
+  try {
+    client = new LdapClient({
+      url: `ldap://${systemConfig.AD_HOST}:${systemConfig.AD_PORT || 389}`,
+    });
+
+    const bindDn = `${systemConfig.AD_DOMAIN}\\${username}`;
+    const baseDN = systemConfig.AD_BASE_DN;
+
+    await client.bind(bindDn, password);
+
+    const result = await client.search(baseDN, {
+      scope: "sub",
+      filter: `(sAMAccountName=${username})`,
+      attributes: [
+        "physicalDeliveryOfficeName",
+        "displayName",
+        "mail",
+        "telephoneNumber",
+      ],
+    });
+
+    if (!result || result.length === 0) {
+      const error = new Error("Tidak ditemukan username user di AD.");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    return username;
+  } catch (error) {
+    if (error.statusCode) {
+      throw error;
+    }
+
+    const ldapError = new Error("Gagal login, LDAP gagal authorize user.");
+    ldapError.statusCode = 400;
+    throw ldapError;
+  } finally {
+    if (client) {
+      await client.unbind().catch(() => {});
+      await client.destroy().catch(() => {});
+    }
+  }
+};
+
+const getOrCreateLdapUser = async (username) => {
+  let userDB = await UserRefrensi.findOne({
+    username,
+    authMethod: "ldap",
+  });
+
+  if (!userDB) {
+    const kodeKasir = await generateUniqueKodeKasir(username);
+    if (!kodeKasir) {
+      const error = new Error("Gagal membuat kode kasir");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    userDB = new UserRefrensi({
+      username,
+      authMethod: "ldap",
+      kodeKasir,
+    });
+    await userDB.save();
+    return userDB;
+  }
+
+  if (!userDB.kodeKasir) {
+    const kodeKasir = await generateUniqueKodeKasir(username);
+    if (!kodeKasir) {
+      const error = new Error("Gagal membuat kode kasir");
+      error.statusCode = 400;
+      throw error;
+    }
+
+    userDB.kodeKasir = kodeKasir;
+    await userDB.save();
+  }
+
+  return userDB;
+};
+
+router.post("/ldap", async (req, res) => {
+  const { username: usernameRaw, password } = req.body;
+
+  try {
+    const username = await authenticateLdapCredentials(usernameRaw, password);
+    const userDB = await getOrCreateLdapUser(username);
+
+    const sanitizedUser = {
+      _id: userDB._id,
+      username: userDB.username,
+    };
+
+    const token = await generateTokenJWT(userDB._id);
+
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    return res.json({
+      message: "Selamat datang kembali",
+      data: sanitizedUser,
+    });
+  } catch (error) {
+    console.log(error);
+    return res.status(error.statusCode || 500).json({
+      message: error.message || "Gagal login, silakan coba lagi.",
+      error: error.message,
+    });
+  }
+});
+
+router.post("/ldapMobile", async (req, res) => {
+  const { username: usernameRaw, password } = req.body;
+
+  try {
+    const username = await authenticateLdapCredentials(usernameRaw, password);
+    const userDB = await getOrCreateLdapUser(username);
+
+    if (userDB?.isDisabled === true) {
+      return res.status(403).json({ message: "Akun anda telah dinonaktifkan" });
+    }
+
+    const sanitized = {
+      _id: userDB._id,
+      username: userDB.username,
+    };
+    const token = await generateTokenMobile(userDB._id);
+    if (!token) {
+      return res
+        .status(400)
+        .json({ message: "Terjadi kesalahan sementara, coba lagi" });
+    }
+
+    return res.json({ message: "sukses", data: { token, data: sanitized } });
+  } catch (error) {
+    console.log(error);
+    return res.status(error.statusCode || 500).json({
+      message: error.message || "Gagal login, silakan coba lagi.",
+      error: error.message,
+    });
+  }
+});
+
 // Update the createNewUser endpoint
 router.post("/createNewUser", async (req, res) => {
   const {
     username,
     password,
-    email,
-    telepon,
     targetHargaPenjualan,
     targetQuantityPenjualan,
     roleName,
@@ -122,9 +286,6 @@ router.post("/createNewUser", async (req, res) => {
   }
   if (!password) {
     return res.status(400).json({ message: "Password diperlukan" });
-  }
-  if (!email) {
-    return res.status(400).json({ message: "Email diperlukan" });
   }
   if (!roleName) {
     return res.status(400).json({ message: "Role name diperlukan" });
@@ -152,7 +313,7 @@ router.post("/createNewUser", async (req, res) => {
       kodeKasir = customKodeKasir;
     } else {
       // Generate kodeKasir otomatis jika tidak disediakan
-      kodeKasir = await generateUniqueKodeKasir(username);
+      kodeKasir = await   generateUniqueKodeKasir(username);
     }
 
     // Hash password
@@ -162,14 +323,10 @@ router.post("/createNewUser", async (req, res) => {
     const newUser = new UserRefrensi();
     newUser.username = username;
     newUser.password = hashedPassword;
-    newUser.email = email;
     newUser.roleName = roleName;
     newUser.kodeKasir = kodeKasir;
 
     // Field opsional
-    if (telepon) {
-      newUser.telepon = telepon;
-    }
     if (targetHargaPenjualan !== undefined) {
       newUser.targetHargaPenjualan = Number(targetHargaPenjualan) || 0;
     }
@@ -234,9 +391,6 @@ router.put("/updateUser", async (req, res) => {
   // Validasi field wajib
   if (!_id) {
     return res.status(400).json({ message: "ID user diperlukan" });
-  }
-  if (!email) {
-    return res.status(400).json({ message: "Email diperlukan" });
   }
   if (!roleName) {
     return res.status(400).json({ message: "Role name diperlukan" });

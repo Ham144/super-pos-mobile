@@ -37,7 +37,7 @@ export const BillActions = ({
       clearSale();
     }
   };
-
+  
   const { loadingPrinting } = useLoading();
 
   const { paymentMethod, spg } = useCurrentBill();
@@ -109,7 +109,7 @@ export const BillActions = ({
           {/* Save & Print Button */}
           <TouchableOpacity
             disabled={
-              !_id || isCalculating || !done || loadingPrinting || !isOnline
+              !_id || isCalculating ||  loadingPrinting
             }
             onPress={handleCetakHelper}
             className={`flex-1 rounded-lg py-2 px-4 shadow-md items-center justify-center flex-row gap-x-2 ${

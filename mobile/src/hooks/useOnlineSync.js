@@ -68,7 +68,7 @@ export const useOnlineSync = () => {
               Alert.alert(
                 "Kesalahan",
                 error?.response?.data?.message ||
-                  "Terjadi kesalahan yang tidak diketahui"
+                  "Terjadi kesalahan sinkronisasi"
               );
             }
           } else if (Platform.OS === "web") {
@@ -85,7 +85,7 @@ export const useOnlineSync = () => {
             } else {
               alert(
                 error?.response?.data?.message ||
-                  "Terjadi kesalahan yang tidak diketahui"
+                  "kegagalan sinkronisasi di web"
               );
             }
           } else {

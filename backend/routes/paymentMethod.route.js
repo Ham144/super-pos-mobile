@@ -16,6 +16,122 @@ export const midtransWebhookRouter = Router();
 const MIDTRANS_PENDING = "pending";
 const MIDTRANS_CREATING = "creating";
 const MIDTRANS_PAID = "paid";
+const MIDTRANS_SYSTEM_KEY = "midtrans_default";
+const MIDTRANS_SYSTEM_METHOD = "Midtrans";
+
+const normalizeIdList = (value) =>
+  [...new Set((Array.isArray(value) ? value : []).map((item) => String(item)).filter(Boolean))];
+
+const normalizePaymentMethodPayload = (body) => {
+  const discount =
+    body.discount === "" || body.discount === undefined || body.discount === null
+      ? undefined
+      : Number(body.discount);
+  const additionalFee =
+    body.additional_fee === "" || body.additional_fee === undefined || body.additional_fee === null
+      ? undefined
+      : Number(body.additional_fee);
+
+  if (discount !== undefined && Number.isNaN(discount)) {
+    throw new Error("Diskon harus berupa angka");
+  }
+
+  if (additionalFee !== undefined && Number.isNaN(additionalFee)) {
+    throw new Error("Biaya tambahan harus berupa angka");
+  }
+
+  return {
+    method: String(body.method || "").trim(),
+    discount,
+    additional_fee: additionalFee,
+    gatewayProvider: body.gatewayProvider === "midtrans" ? "midtrans" : null,
+    status:
+      typeof body.status === "boolean"
+        ? body.status
+        : String(body.status).toLowerCase() !== "false",
+  };
+};
+
+const isSystemMidtransMethod = (paymentMethod) =>
+  Boolean(
+    paymentMethod &&
+      (paymentMethod.isSystem ||
+        paymentMethod.systemKey === MIDTRANS_SYSTEM_KEY ||
+        paymentMethod.gatewayProvider === "midtrans"),
+  );
+
+const ensureSystemMidtransPaymentMethod = async () => {
+  const existingMidtrans = await PaymentMethod.findOne({
+    $or: [{ systemKey: MIDTRANS_SYSTEM_KEY }, { gatewayProvider: "midtrans" }],
+  });
+
+  const midtrans = existingMidtrans
+    ? await PaymentMethod.findByIdAndUpdate(
+        existingMidtrans._id,
+        {
+          $set: {
+            method: MIDTRANS_SYSTEM_METHOD,
+            discount: 0,
+            additional_fee: 0,
+            status: true,
+            gatewayProvider: "midtrans",
+            isSystem: true,
+            systemKey: MIDTRANS_SYSTEM_KEY,
+          },
+        },
+        { new: true, runValidators: true },
+      )
+    : await PaymentMethod.create({
+        method: MIDTRANS_SYSTEM_METHOD,
+        discount: 0,
+        additional_fee: 0,
+        status: true,
+        gatewayProvider: "midtrans",
+        isSystem: true,
+        systemKey: MIDTRANS_SYSTEM_KEY,
+      });
+
+  await Outlet.updateMany({}, { $addToSet: { paymentList: midtrans._id } });
+  return midtrans;
+};
+
+const validateOutletIds = async (outletIds = []) => {
+  const normalizedOutletIds = normalizeIdList(outletIds);
+
+  if (!normalizedOutletIds.length) {
+    return normalizedOutletIds;
+  }
+
+  const existingOutlets = await Outlet.find({
+    _id: { $in: normalizedOutletIds },
+  }).select("_id");
+
+  if (existingOutlets.length !== normalizedOutletIds.length) {
+    const foundIds = new Set(existingOutlets.map((item) => String(item._id)));
+    const missingOutletIds = normalizedOutletIds.filter((id) => !foundIds.has(id));
+    const error = new Error(`Outlet tidak ditemukan: ${missingOutletIds.join(", ")}`);
+    error.status = 404;
+    error.missingOutletIds = missingOutletIds;
+    throw error;
+  }
+
+  return normalizedOutletIds;
+};
+
+const syncPaymentMethodOutlets = async (paymentMethodId, outletIds = []) => {
+  const normalizedOutletIds = await validateOutletIds(outletIds);
+
+  await Outlet.updateMany({}, { $pull: { paymentList: paymentMethodId } });
+
+  if (normalizedOutletIds.length) {
+    await Outlet.updateMany(
+      { _id: { $in: normalizedOutletIds } },
+      { $addToSet: { paymentList: paymentMethodId } }
+    );
+  }
+
+  return normalizedOutletIds;
+};
 
 const getGatewayStatus = (notification) => {
   if (isMidtransPaymentSuccessful(notification)) return MIDTRANS_PAID;
@@ -45,6 +161,8 @@ const getInvoiceForCurrentOutlet = async (req, { invoiceId, kodeInvoice }) => {
 };
 
 const validateInvoiceForMidtrans = async (invoice) => {
+  await ensureSystemMidtransPaymentMethod();
+
   if (invoice.done) return "Bill telah selesai";
   if (invoice.isVoid || invoice.requestingVoid) {
     return "Bill telah dibatalkan atau sedang dalam proses pembatalan";
@@ -262,6 +380,22 @@ midtransWebhookRouter.post("/notification", async (req, res) => {
 
 router.get("/getAllPaymentMethod", async (req, res) => {
   try {
+    await ensureSystemMidtransPaymentMethod();
+    const { outletId } = req.query;
+
+    if (outletId && outletId !== "all") {
+      const outlet = await Outlet.findById(outletId).select("paymentList");
+      if (!outlet) {
+        return res.status(404).json({ message: "Outlet tidak ditemukan" });
+      }
+
+      const paymentMethodIds = normalizeIdList(outlet.paymentList);
+      const paymentMethods = await PaymentMethod.find({
+        _id: { $in: paymentMethodIds },
+      });
+      return res.status(200).json(paymentMethods);
+    }
+
     const paymentMethods = await PaymentMethod.find();
     res.status(200).json(paymentMethods);
   } catch (error) {
@@ -269,19 +403,109 @@ router.get("/getAllPaymentMethod", async (req, res) => {
   }
 });
 
+
 router.post("/createPaymentMethod", async (req, res) => {
+  let createdPaymentMethod = null;
   try {
-    const paymentMethod = await PaymentMethod.create(req.body);
-    res.status(201).json(paymentMethod);
+    await ensureSystemMidtransPaymentMethod();
+    const payload = normalizePaymentMethodPayload(req.body);
+    if (!payload.method) {
+      return res.status(400).json({ message: "Nama metode pembayaran wajib diisi" });
+    }
+
+    if (payload.gatewayProvider === "midtrans") {
+      return res.status(400).json({
+        message:
+          "Midtrans adalah metode sistem dan tidak dibuat manual dari halaman ini",
+      });
+    }
+
+    const outletIds = await validateOutletIds(req.body?.outletIds);
+    createdPaymentMethod = await PaymentMethod.create({
+      ...payload,
+      isSystem: false,
+      systemKey: null,
+    });
+    await syncPaymentMethodOutlets(createdPaymentMethod._id, outletIds);
+    res.status(201).json(createdPaymentMethod);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    if (createdPaymentMethod?._id) {
+      await PaymentMethod.findByIdAndDelete(createdPaymentMethod._id);
+    }
+    const status = error?.status || 500;
+    res.status(status).json({ message: error.message });
+  }
+});
+
+router.put("/updatePaymentMethod/:id", async (req, res) => {
+  try {
+    await ensureSystemMidtransPaymentMethod();
+    const { id } = req.params;
+    const paymentMethod = await PaymentMethod.findById(id);
+    if (!paymentMethod) {
+      return res.status(404).json({ message: "Metode pembayaran tidak ditemukan" });
+    }
+
+    if (isSystemMidtransMethod(paymentMethod)) {
+      return res.status(400).json({
+        message:
+          "Metode pembayaran sistem Midtrans tidak bisa diubah dari halaman ini",
+      });
+    }
+
+    const payload = normalizePaymentMethodPayload(req.body);
+    if (!payload.method) {
+      return res.status(400).json({ message: "Nama metode pembayaran wajib diisi" });
+    }
+
+    if (payload.gatewayProvider === "midtrans") {
+      return res.status(400).json({
+        message:
+          "Midtrans adalah metode sistem dan tidak bisa dijadikan metode manual",
+      });
+    }
+
+    const outletIds = await validateOutletIds(req.body?.outletIds);
+    const updatedPaymentMethod = await PaymentMethod.findByIdAndUpdate(
+      id,
+      {
+        $set: {
+          ...payload,
+          isSystem: false,
+          systemKey: null,
+        },
+      },
+      { new: true }
+    );
+
+    await syncPaymentMethodOutlets(updatedPaymentMethod._id, outletIds);
+
+    res.status(200).json(updatedPaymentMethod);
+  } catch (error) {
+    const status = error?.status || 500;
+    res.status(status).json({ message: error.message });
   }
 });
 
 // Route untuk menghapus metode pembayaran
 router.delete("/deletePaymentMethod/:id", async (req, res) => {
   try {
+    await ensureSystemMidtransPaymentMethod();
     const { id } = req.params;
+    const paymentMethod = await PaymentMethod.findById(id);
+
+    if (!paymentMethod) {
+      return res
+        .status(404)
+        .json({ message: "Metode pembayaran tidak ditemukan" });
+    }
+
+    if (isSystemMidtransMethod(paymentMethod)) {
+      return res.status(400).json({
+        message: "Metode pembayaran sistem Midtrans tidak bisa dihapus",
+      });
+    }
+
     const deletedPaymentMethod = await PaymentMethod.findByIdAndDelete(id);
 
     if (!deletedPaymentMethod) {
@@ -289,6 +513,8 @@ router.delete("/deletePaymentMethod/:id", async (req, res) => {
         .status(404)
         .json({ message: "Metode pembayaran tidak ditemukan" });
     }
+
+    await Outlet.updateMany({}, { $pull: { paymentList: id } });
 
     res.status(200).json({ message: "Metode pembayaran berhasil dihapus" });
   } catch (error) {
@@ -299,6 +525,7 @@ router.delete("/deletePaymentMethod/:id", async (req, res) => {
 // Route untuk mengaktifkan/menonaktifkan metode pembayaran
 router.patch("/togglePaymentMethodStatus/:id", async (req, res) => {
   try {
+    await ensureSystemMidtransPaymentMethod();
     const { id } = req.params;
     const paymentMethod = await PaymentMethod.findById(id);
 
@@ -306,6 +533,13 @@ router.patch("/togglePaymentMethodStatus/:id", async (req, res) => {
       return res
         .status(404)
         .json({ message: "Metode pembayaran tidak ditemukan" });
+    }
+
+    if (isSystemMidtransMethod(paymentMethod)) {
+      return res.status(400).json({
+        message:
+          "Metode pembayaran sistem Midtrans tidak bisa dinonaktifkan",
+      });
     }
 
     // Toggle status (true menjadi false atau sebaliknya)

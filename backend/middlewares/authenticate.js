@@ -2,8 +2,10 @@ import jwt from "jsonwebtoken";
 
 export const noAuthOriginalUrl = [
   "/api/v1/auth/login",
+  "/api/v1/auth/ldap",
   "/api/v1/auth/register",
   "/api/v1/auth/loginMobile",
+  "/api/v1/auth/ldapMobile",
   "/api/v1/report",
   "/api/v1/ping",
   "/api/v1/document",

@@ -8,6 +8,13 @@ export const login = async (body) => {
   return response?.data;
 };
 
+export const loginLdap = async (body) => {
+  const response = await axios.post(`${BASE_URL}/api/v1/auth/ldap`, body, {
+    withCredentials: true,
+  });
+  return response?.data;
+};
+
 export const createNewUser = async (body) => {
   if (body.roleName === "SPG") {
     throw new Error(

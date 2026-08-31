@@ -17,6 +17,16 @@ const paymentMethodSchema = new Schema({
     enum: ["midtrans", null],
     default: null,
   },
+  isSystem: {
+    type: Boolean,
+    default: false,
+  },
+  systemKey: {
+    type: String,
+    default: null,
+    unique: true,
+    sparse: true,
+  },
 });
 
 const PaymentMethod = model("PaymentMethod", paymentMethodSchema);

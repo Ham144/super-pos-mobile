@@ -1,4 +1,5 @@
 export const APP_NAME = "CSI SUPER POS";
+export const APP_DESC = "Sistem POS by CSI untuk penjualan di outlet dan event besar"
 
 const PROD_URL = "https://internal-pos.mycsi.net";
 const DEV_URL = "http://192.168.21.193:3003";
@@ -70,7 +71,11 @@ export const mockPages = [
   },
   {
     originalPath: "/all_account",
-    description: "Page untuk Manager User ",
+    description: "Page untuk mengelola akun login yang bersifat stateful",
+  },
+  {
+    originalPath: "/spg_reference",
+    description: "Page untuk mengelola data SPG yang stateless",
   },
   {
     originalPath: "/kasir_list",
@@ -79,7 +84,7 @@ export const mockPages = [
   },
   {
     originalPath: "/spg_list",
-    description: "Page untuk register SPG dan melihat spg ",
+    description: "Alias halaman SPG reference yang stateless",
   },
   {
     originalPath: "/outlet_list",
@@ -88,6 +93,10 @@ export const mockPages = [
   {
     originalPath: "/payment_method",
     description: "Page untuk membuat/mengedit metode pembayaran",
+  },
+  {
+    originalPath: "/printer_config",
+    description: "Page untuk mengelola konfigurasi printer",
   },
   {
     originalPath: "/kwitansi_pembayaran_tertunda",
@@ -537,6 +546,30 @@ export const mockBackend = [
     originalPath: "/api/v1/printer/printCetakKuitansi",
     description:
       "API untuk mencetak dan logic akhir setelah pembayaran dilakukan",
+  },
+  {
+    originalPath: "/api/v1/printer/getAllPrinter",
+    description: "API untuk mendapatkan semua konfigurasi printer",
+  },
+  {
+    originalPath: "/api/v1/printer/getDefaultPrinter",
+    description: "API untuk mendapatkan printer default",
+  },
+  {
+    originalPath: "/api/v1/printer/createPrinter",
+    description: "API untuk membuat konfigurasi printer baru",
+  },
+  {
+    originalPath: "/api/v1/printer/updatePrinter/:id",
+    description: "API untuk memperbarui konfigurasi printer",
+  },
+  {
+    originalPath: "/api/v1/printer/deletePrinter/:id",
+    description: "API untuk menghapus konfigurasi printer",
+  },
+  {
+    originalPath: "/api/v1/printer/setDefaultPrinter/:id",
+    description: "API untuk mengubah printer default",
   },
 
   // Payment Routes

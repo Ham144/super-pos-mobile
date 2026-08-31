@@ -34,6 +34,23 @@ const systemConfigSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    //Active Directory
+    AD_HOST: {
+      type: String,
+      default: "",
+    },
+    AD_PORT: {
+      type: Number,
+      default: 389,
+    },
+    AD_DOMAIN: {
+      type: String,
+      default: "",
+    },
+    AD_BASE_DN: {
+      type: String,
+      default: "",
+    },
   },
   {
     timestamps: true,

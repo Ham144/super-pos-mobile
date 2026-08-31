@@ -10,7 +10,12 @@ const userSchema = new mongoose.Schema(
     },
     password: {
       type: String,
+    },
+    authMethod: {
+      type: String,
       required: true,
+      enum: ["app", "ldap"],
+      default: "app",
     },
     otp: {
       type: Number,
@@ -35,7 +40,7 @@ const userSchema = new mongoose.Schema(
     roleName: {
       type: String,
       required: true,
-      default: "Tamu",
+      default: "Kasir",
     },
     blockedAccess: {
       //logika terbalik [block page, atau enpoint],

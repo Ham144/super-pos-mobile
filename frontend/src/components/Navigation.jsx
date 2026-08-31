@@ -15,6 +15,7 @@ import {
   Users,
   CreditCard,
   Receipt,
+  Printer,
   Tags,
   Percent,
   Ticket,
@@ -94,7 +95,10 @@ const SideDrawer = ({ children }) => {
     {
       title: "ACCOUNTS",
       icon: Wallet,
-      items: [{ name: "ALL ACCOUNT", icon: Wallet }],
+      items: [
+        { name: "ALL ACCOUNT", icon: Wallet },
+        { name: "SPG REFERENCE", icon: Users },
+      ],
     },
     {
       title: "TRANSACTION SETTINGS",
@@ -102,6 +106,7 @@ const SideDrawer = ({ children }) => {
       items: [
         { name: "OUTLET LIST", icon: Store },
         { name: "PAYMENT METHOD", icon: CreditCard },
+        { name: "PRINTER CONFIG", icon: Printer },
         { name: "KWITANSI PEMBAYARAN TERTUNDA", icon: Receipt },
       ],
     },
@@ -205,14 +210,14 @@ const SideDrawer = ({ children }) => {
           <div className="flex items-center justify-center w-full p-1">
             <div
               role="alert"
-              className={`alert relative flex items-center justify-between bg-blue-900/90 backdrop-blur-sm text-white border border-blue-400/30 rounded-2xl shadow-xl transition-all duration-300 ${
+              className={`alert relative flex items-center justify-between bg-blue-900/90 backdrop-blur-sm text-white border border-blue-400/30 rounded-2xl shadow-xl transition-all duration-300  ${
                 isShowSidebar
                   ? "w-full px-3 py-2 gap-3"
                   : "w-auto px-2 py-2 gap-2"
               }`}
             >
               {/* User Profile Area */}
-              {userInfo && (
+              {userInfo ? (
                 <div
                   onClick={() => navigate("/profile")}
                   onKeyDown={(e) => {
@@ -265,10 +270,8 @@ const SideDrawer = ({ children }) => {
                     </div>
                   )}
                 </div>
-              )}
-
-              {/* Arrow Action Button */}
-              <div className="flex items-center gap-2 shrink-0">
+              ) : 
+               <div className="flex items-center gap-2 shrink-0 justify-between w-full ">
                 {isShowSidebar && (
                   <span className="font-medium text-xs text-white/80 hidden xl:block">
                     Dashboard
@@ -278,13 +281,18 @@ const SideDrawer = ({ children }) => {
                   onClick={() => navigate("/dashboard")}
                   type="button"
                   aria-label="Buka Dashboard"
-                  className="bg-white/20 hover:bg-white/30 rounded-full w-8 h-8 flex items-center justify-center transition-all hover:scale-105 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/50"
+                  className="p-3 "
                   title="Dashboard"
                 >
-                  <ArrowRight color="white" size={16} aria-hidden="true" />
+                  <ArrowRight color="white" size={15} aria-hidden="true" />
                 </button>
-              </div>
+              </div> 
+              }
+
+              {/* Arrow Action Button */}
+           
             </div>
+           
           </div>
           {menuItems.map((group, idx) => (
             <div key={idx} className="mt-3">

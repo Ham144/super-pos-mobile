@@ -3,9 +3,11 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getAllPaymentMethod,
   createPaymentMethod,
+  updatePaymentMethod,
   deletePaymentMethod,
   togglePaymentMethodStatus,
 } from "../api/paymentMethodApi";
+import { getOuletList } from "../api/outletApi";
 
 import {
   Plus,
@@ -31,23 +33,36 @@ import {
 const PaymentMethod = () => {
   const queryClient = useQueryClient();
 
-  // State untuk modal tambah metode pembayaran
-  const [isModalOpen, setIsModalOpen] = useState(false);
-
-  // State untuk alert/notifikasi
-  const [alert, setAlert] = useState({ show: false, message: "", type: "" });
-
-  // State untuk form
-  const [formData, setFormData] = useState({
+  const initialFormData = {
     method: "",
     discount: "",
     additional_fee: "",
     gatewayProvider: null,
     status: true,
-  });
+    outletIds: [],
+  };
+
+  // State untuk modal tambah/edit metode pembayaran
+  const [modalMode, setModalMode] = useState(null);
+
+  // State untuk alert/notifikasi
+  const [alert, setAlert] = useState({ show: false, message: "", type: "" });
+
+  const [selectedMethod, setSelectedMethod] = useState(null);
+  const [selectedOutletFilter, setSelectedOutletFilter] = useState("all");
+
+  // State untuk form
+  const [formData, setFormData] = useState(initialFormData);
 
   // State untuk konfirmasi hapus
   const [deleteConfirm, setDeleteConfirm] = useState({ show: false, id: null });
+
+  const { data: outletResponse, isLoading: isOutletLoading } = useQuery({
+    queryKey: ["outlets"],
+    queryFn: getOuletList,
+  });
+
+  const outletList = outletResponse?.data || [];
 
   // Menggunakan TanStack Query untuk fetch data
   const {
@@ -55,27 +70,96 @@ const PaymentMethod = () => {
     isLoading,
     error,
   } = useQuery({
-    queryKey: ["paymentMethods"],
-    queryFn: getAllPaymentMethod,
+    queryKey: ["paymentMethods", selectedOutletFilter],
+    queryFn: () =>
+      getAllPaymentMethod(
+        selectedOutletFilter && selectedOutletFilter !== "all"
+          ? { outletId: selectedOutletFilter }
+          : {}
+      ),
   });
+
+  const resetFormData = () => {
+    setFormData(initialFormData);
+    setSelectedMethod(null);
+  };
+
+  const getOutletIdsForMethod = (methodId) =>
+    outletList
+      .filter((outlet) =>
+        (outlet.paymentList || []).some(
+          (paymentId) => String(paymentId) === String(methodId)
+        )
+      )
+      .map((outlet) => outlet._id);
+
+  const openCreateModal = () => {
+    resetFormData();
+    setModalMode("create");
+  };
+
+  const openEditModal = (method) => {
+    setSelectedMethod(method);
+    setFormData({
+      method: method.method || "",
+      discount:
+        method.discount === undefined || method.discount === null
+          ? ""
+          : String(method.discount),
+      additional_fee:
+        method.additional_fee === undefined || method.additional_fee === null
+          ? ""
+          : String(method.additional_fee),
+      gatewayProvider: method.gatewayProvider || null,
+      status: Boolean(method.status),
+      outletIds: getOutletIdsForMethod(method._id),
+    });
+    setModalMode("edit");
+  };
+
+  const closeModal = () => {
+    setModalMode(null);
+    resetFormData();
+  };
+
+  const toggleOutletSelection = (outletId) => {
+    setFormData((prev) => {
+      const outletIds = prev.outletIds || [];
+      const nextOutletIds = outletIds.includes(outletId)
+        ? outletIds.filter((id) => id !== outletId)
+        : [...outletIds, outletId];
+
+      return {
+        ...prev,
+        outletIds: nextOutletIds,
+      };
+    });
+  };
 
   // Mutasi untuk menambah metode pembayaran
   const createMutation = useMutation({
     mutationFn: createPaymentMethod,
     onSuccess: () => {
       showAlert("Metode pembayaran berhasil ditambahkan");
-      setIsModalOpen(false);
-      setFormData({
-        method: "",
-        discount: "",
-        additional_fee: "",
-        gatewayProvider: null,
-        status: true,
-      });
+      closeModal();
       queryClient.invalidateQueries({ queryKey: ["paymentMethods"] });
+      queryClient.invalidateQueries({ queryKey: ["outlets"] });
     },
     onError: () => {
       showAlert("Gagal menambahkan metode pembayaran", "error");
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }) => updatePaymentMethod(id, data),
+    onSuccess: () => {
+      showAlert("Metode pembayaran berhasil diperbarui");
+      closeModal();
+      queryClient.invalidateQueries({ queryKey: ["paymentMethods"] });
+      queryClient.invalidateQueries({ queryKey: ["outlets"] });
+    },
+    onError: () => {
+      showAlert("Gagal memperbarui metode pembayaran", "error");
     },
   });
 
@@ -86,6 +170,7 @@ const PaymentMethod = () => {
       showAlert("Metode pembayaran berhasil dihapus");
       setDeleteConfirm({ show: false, id: null });
       queryClient.invalidateQueries({ queryKey: ["paymentMethods"] });
+      queryClient.invalidateQueries({ queryKey: ["outlets"] });
     },
     onError: () => {
       showAlert("Gagal menghapus metode pembayaran", "error");
@@ -103,7 +188,7 @@ const PaymentMethod = () => {
       showAlert("Gagal mengubah status metode pembayaran", "error");
     },
   });
-
+  
   // Fungsi untuk menampilkan alert/notifikasi
   const showAlert = (message, type = "success") => {
     setAlert({ show: true, message, type });
@@ -129,7 +214,17 @@ const PaymentMethod = () => {
   // Fungsi untuk menambah metode pembayaran baru
   const handleAddPaymentMethod = (e) => {
     e.preventDefault();
-    createMutation.mutate(formData);
+    const payload = {
+      ...formData,
+      outletIds: formData.outletIds || [],
+    };
+
+    if (modalMode === "edit" && selectedMethod?._id) {
+      updateMutation.mutate({ id: selectedMethod._id, data: payload });
+      return;
+    }
+
+    createMutation.mutate(payload);
   };
 
   // Fungsi untuk menghapus metode pembayaran
@@ -178,11 +273,10 @@ const PaymentMethod = () => {
               </div>
               <div>
                 <h1 className="text-3xl font-bold text-gray-800">
-                  Metode Pembayaran
+                  Metode Pembayaran external
                 </h1>
                 <p className="text-gray-500 mt-1 flex items-center gap-1">
-                  Atur kategori pembayaran yang akan berguna untuk 
-                  dashboard sales report
+                  Atur kategori pembayaran offline (pengganti online payment e.g:midtrans), berguna untuk transaksi offline
                   <div
                     className="tooltip tooltip-right"
                     data-tip="Metode pembayaran yang aktif akan tersedia untuk transaksi"
@@ -194,11 +288,35 @@ const PaymentMethod = () => {
             </div>
             <button
               className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 flex items-center gap-2 font-medium shadow-blue-200"
-              onClick={() => setIsModalOpen(true)}
+              onClick={openCreateModal}
             >
               <Plus className="w-5 h-5" />
               Tambah Metode Pembayaran
             </button>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl shadow-xl border border-blue-100 p-4 mb-8">
+          <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Filter Outlet
+              </label>
+              <select
+                className="w-full border border-gray-200 px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-950 focus:border-transparent transition-all duration-200"
+                value={selectedOutletFilter}
+                onChange={(e) => setSelectedOutletFilter(e.target.value)}
+                disabled={isOutletLoading}
+              >
+                <option value="all">Semua Outlet</option>
+                {outletList.map((outlet) => (
+                  <option key={outlet._id} value={outlet._id}>
+                    {outlet.kodeOutlet} - {outlet.namaOutlet}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
           </div>
         </div>
 
@@ -227,7 +345,7 @@ const PaymentMethod = () => {
               </p>
               <button
                 className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 flex items-center gap-2"
-                onClick={() => setIsModalOpen(true)}
+                onClick={openCreateModal}
               >
                 <Plus className="w-5 h-5" />
                 Tambah Metode Pembayaran
@@ -249,6 +367,9 @@ const PaymentMethod = () => {
                     </th>
                     <th className="px-6 py-4 text-left text-sm font-semibold text-white">
                       Integrasi
+                    </th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-white">
+                      Outlet
                     </th>
                     <th className="px-6 py-4 text-left text-sm font-semibold text-white">
                       Status
@@ -311,13 +432,44 @@ const PaymentMethod = () => {
                         )}
                       </td>
                       <td className="px-6 py-4">
-                        {method.gatewayProvider === "midtrans" ? (
+                        {method.isSystem || method.gatewayProvider === "midtrans" ? (
+                          <span className="bg-purple-100 text-purple-700 px-3 py-1 rounded-lg text-sm font-medium">
+                            Sistem
+                          </span>
+                        ) : method.gatewayProvider === "midtrans" ? (
                           <span className="bg-sky-100 text-sky-700 px-3 py-1 rounded-lg text-sm font-medium">
                             Midtrans
                           </span>
                         ) : (
                           <span className="text-gray-400 text-sm">Manual</span>
                         )}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-wrap gap-2 max-w-md">
+                          {outletList
+                            .filter((outlet) =>
+                              (outlet.paymentList || []).some(
+                                (paymentId) =>
+                                  String(paymentId) === String(method._id)
+                              )
+                            )
+                            .map((outlet) => (
+                              <span
+                                key={outlet._id}
+                                className="bg-blue-100 text-blue-700 px-3 py-1 rounded-lg text-xs font-medium"
+                              >
+                                {outlet.kodeOutlet}
+                              </span>
+                            ))}
+                          {!outletList.some((outlet) =>
+                            (outlet.paymentList || []).some(
+                              (paymentId) =>
+                                String(paymentId) === String(method._id)
+                            )
+                          ) && (
+                            <span className="text-gray-400 text-sm">-</span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
@@ -333,63 +485,60 @@ const PaymentMethod = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <div className="flex justify-center gap-2">
-                          <div className="tooltip" data-tip={"manage"}>
-                            <button
-                              onClick={() => {
-                                // setSelectedMethod(method);
-                                // document
-                                //   .getElementById("edit-payment-method-modal")
-                                //   .showModal();
-                              }}
-                              disabled={toggleStatusMutation.isPending}
-                              className={`p-2 rounded-lg transition-all duration-200 ${
-                                method.status
-                                  ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
-                                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                              }`}
+                        {method.isSystem || method.gatewayProvider === "midtrans" ? (
+                          <span className="text-xs font-medium text-purple-600">
+                            Terkunci oleh sistem
+                          </span>
+                        ) : (
+                          <div className="flex justify-center gap-2">
+                            <div className="tooltip" data-tip={"manage"}>
+                              <button
+                                onClick={() => openEditModal(method)}
+                                disabled={toggleStatusMutation.isPending}
+                                className="p-2 rounded-lg transition-all duration-200 bg-blue-100 text-blue-700 hover:bg-blue-200"
+                              >
+                                <Edit />
+                              </button>
+                            </div>
+                            <div
+                              className="tooltip"
+                              data-tip={
+                                method.status ? "Nonaktifkan" : "Aktifkan"
+                              }
                             >
-                              <Edit />
-                            </button>
-                          </div>
-                          <div
-                            className="tooltip"
-                            data-tip={
-                              method.status ? "Nonaktifkan" : "Aktifkan"
-                            }
-                          >
-                            <button
-                              onClick={() => handleToggleStatus(method._id)}
-                              disabled={toggleStatusMutation.isPending}
-                              className={`p-2 rounded-lg transition-all duration-200 ${
-                                method.status
-                                  ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
-                                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                              }`}
-                            >
-                              {method.status ? (
-                                <ToggleRight className="w-5 h-5" />
-                              ) : (
-                                <ToggleLeft className="w-5 h-5" />
-                              )}
-                            </button>
-                          </div>
+                              <button
+                                onClick={() => handleToggleStatus(method._id)}
+                                disabled={toggleStatusMutation.isPending}
+                                className={`p-2 rounded-lg transition-all duration-200 ${
+                                  method.status
+                                    ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+                                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                                }`}
+                              >
+                                {method.status ? (
+                                  <ToggleRight className="w-5 h-5" />
+                                ) : (
+                                  <ToggleLeft className="w-5 h-5" />
+                                )}
+                              </button>
+                            </div>
 
-                          <div className="tooltip" data-tip="Hapus">
-                            <button
-                              className="p-2 rounded-lg bg-red-100 text-red-600 hover:bg-red-200 transition-all duration-200"
-                              onClick={() =>
-                                setDeleteConfirm({ show: true, id: method._id })
-                              }
-                              disabled={
-                                toggleStatusMutation.isPending ||
-                                deleteMutation.isPending
-                              }
-                            >
-                              <Trash2 className="w-5 h-5" />
-                            </button>
+                            <div className="tooltip" data-tip="Hapus">
+                              <button
+                                className="p-2 rounded-lg bg-red-100 text-red-600 hover:bg-red-200 transition-all duration-200"
+                                onClick={() =>
+                                  setDeleteConfirm({ show: true, id: method._id })
+                                }
+                                disabled={
+                                  toggleStatusMutation.isPending ||
+                                  deleteMutation.isPending
+                                }
+                              >
+                                <Trash2 className="w-5 h-5" />
+                              </button>
+                            </div>
                           </div>
-                        </div>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -399,11 +548,10 @@ const PaymentMethod = () => {
           )}
         </div>
 
-        {/* Modal Tambah Metode Pembayaran */}
-        {isModalOpen && (
+        {/* Modal Tambah/Edit Metode Pembayaran */}
+        {modalMode && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg relative animate-scaleIn">
-              {/* Header Modal */}
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl relative animate-scaleIn max-h-[90vh] overflow-y-auto">
               <div className="p-6 border-b border-blue-100">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -411,28 +559,20 @@ const PaymentMethod = () => {
                       <CreditCard className="w-5 h-5 text-white" />
                     </div>
                     <h3 className="text-xl font-bold text-gray-800">
-                      Tambah Metode Pembayaran
+                      {modalMode === "edit"
+                        ? "Edit Metode Pembayaran"
+                        : "Tambah Metode Pembayaran"}
                     </h3>
                   </div>
                   <button
                     className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                    onClick={() => {
-                      setIsModalOpen(false);
-                      setFormData({
-                        method: "",
-                        discount: "",
-                        additional_fee: "",
-                        gatewayProvider: null,
-                        status: true,
-                      });
-                    }}
+                    onClick={closeModal}
                   >
                     <X className="w-5 h-5 text-gray-500" />
                   </button>
                 </div>
               </div>
 
-              {/* Form */}
               <form onSubmit={handleAddPaymentMethod} className="p-6 space-y-5">
                 <div className="space-y-1">
                   <label className="block text-sm font-medium text-gray-700">
@@ -498,22 +638,18 @@ const PaymentMethod = () => {
                   </div>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="block text-sm font-medium text-gray-700">
-                    Integrasi Pembayaran
-                  </label>
-                  <select
-                    name="gatewayProvider"
-                    value={formData.gatewayProvider || ""}
-                    onChange={handleInputChange}
-                    className="w-full border border-gray-200 px-4 py-3 rounded-xl focus:ring-2 focus:ring-blue-950 focus:border-transparent transition-all duration-200"
-                  >
-                    <option value="">Manual / tanpa gateway</option>
-                    <option value="midtrans">Midtrans</option>
-                  </select>
-                  <p className="text-xs text-gray-500">
-                    Pilih Midtrans hanya untuk metode yang harus diverifikasi oleh payment gateway sebelum kuitansi dicetak.
-                  </p>
+                <div className="rounded-xl border border-purple-100 bg-purple-50 p-4">
+                  <div className="flex items-start gap-3">
+                    <Info className="w-4 h-4 text-purple-700 mt-0.5" />
+                    <div>
+                      <p className="font-medium text-purple-900">
+                        Midtrans adalah metode sistem
+                      </p>
+                      <p className="text-xs text-purple-800 mt-1">
+                        Metode gateway ini dibuat otomatis oleh sistem, selalu aktif, dan tidak bisa dibuat, diubah, atau dihapus dari halaman ini.
+                      </p>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="bg-blue-50 rounded-xl p-4">
@@ -554,35 +690,86 @@ const PaymentMethod = () => {
                   </label>
                 </div>
 
-                {/* Footer Modal */}
+                <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                  <div className="flex items-center justify-between gap-3 mb-4">
+                    <div>
+                      <h4 className="font-semibold text-gray-800">
+                        Tautkan Outlet
+                      </h4>
+                      <p className="text-xs text-gray-500">
+                        Centang outlet yang boleh memakai metode ini. Data ini disimpan ke
+                        <span className="font-medium"> Outlet.paymentList</span>.
+                      </p>
+                    </div>
+                    <span className="text-xs font-medium text-gray-500">
+                      {formData.outletIds?.length || 0} outlet dipilih
+                    </span>
+                  </div>
+
+                  {outletList.length === 0 ? (
+                    <div className="text-sm text-gray-500">
+                      Belum ada outlet yang tersedia.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {outletList.map((outlet) => {
+                        const checked = (formData.outletIds || []).includes(
+                          outlet._id
+                        );
+
+                        return (
+                          <label
+                            key={outlet._id}
+                            className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all duration-200 ${
+                              checked
+                                ? "border-blue-500 bg-blue-50"
+                                : "border-gray-200 bg-white hover:bg-gray-50"
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 text-blue-600"
+                              checked={checked}
+                              onChange={() => toggleOutletSelection(outlet._id)}
+                            />
+                            <div className="min-w-0">
+                              <div className="font-medium text-gray-800 truncate">
+                                {outlet.namaOutlet}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                {outlet.kodeOutlet}
+                              </div>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
                 <div className="flex gap-3 pt-4">
                   <button
                     type="button"
                     className="flex-1 px-4 py-3 border border-gray-200 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-all duration-200"
-                    onClick={() => {
-                      setIsModalOpen(false);
-                      setFormData({
-                        method: "",
-                        discount: "",
-                        additional_fee: "",
-                        gatewayProvider: null,
-                        status: true,
-                      });
-                    }}
-                    disabled={createMutation.isPending}
+                    onClick={closeModal}
+                    disabled={createMutation.isPending || updateMutation.isPending}
                   >
                     Batal
                   </button>
                   <button
                     type="submit"
                     className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 text-white px-4 py-3 rounded-xl font-medium hover:shadow-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={createMutation.isPending}
+                    disabled={createMutation.isPending || updateMutation.isPending}
                   >
-                    {createMutation.isPending ? (
+                    {createMutation.isPending || updateMutation.isPending ? (
                       <div className="flex items-center justify-center gap-2">
                         <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Menyimpan...</span>
+                        <span>
+                          {modalMode === "edit" ? "Memperbarui..." : "Menyimpan..."}
+                        </span>
                       </div>
+                    ) : modalMode === "edit" ? (
+                      "Perbarui"
                     ) : (
                       "Simpan"
                     )}

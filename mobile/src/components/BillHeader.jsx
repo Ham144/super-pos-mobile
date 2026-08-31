@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -121,7 +121,7 @@ export const BillHeader = ({
             </View>
             <View className="block">
               <Text className="text-white text-xs font-medium">
-                {autoSyncSetelahKwitansiPertama ? "autosync" : "interval"}
+                {autoSyncSetelahKwitansiPertama ? "Auto" : "Interval"}
               </Text>
             </View>
           </TouchableOpacity>

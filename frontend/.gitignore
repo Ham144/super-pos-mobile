@@ -25,4 +25,5 @@ dist-ssr
 *.sw?
 .env
 /dist
-/
+/frontend/public/uploads
+/frontend/.vite-cache/*

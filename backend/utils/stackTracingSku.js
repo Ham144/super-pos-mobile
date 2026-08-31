@@ -12,13 +12,13 @@ import StackTraceSku from "../models/StackTraceSku.model.js";
  * @param {String} invoice - invoice._id //bill._id saat invoice ini di sync
  */
 export async function stackTracingSku(
-  itemId,
+  {itemId,
   userId,
   stackDescription,
   category,
   prevQuantity,
   receivedQuantityTrace, //quantity terbarunya bukan perngurangan atau penambahannya
-  invoice
+  invoice}
 ) {
   try {
     if (prevQuantity != 0 && prevQuantity == receivedQuantityTrace) {

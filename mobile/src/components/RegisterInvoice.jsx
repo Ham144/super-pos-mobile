@@ -16,6 +16,7 @@ import { BillTotalsFooter } from "./BillTotalsFooter";
 import { useBillCalculations } from "../hooks/useBillCalculations";
 import { useOnlineSync } from "../hooks/useOnlineSync";
 import { useBillOperations } from "../hooks/useBillOperations";
+import MidtransOptionModal from "./MidtransOptionModal";
 import { ModalNomorTransaksi } from "./ModalNomorTransaksi";
 import ModalVoucherRedeem from "./ModalVoucherRedeem";
 
@@ -32,7 +33,6 @@ const RegisterInvoice = ({ fullWidth = false }) => {
   const [customerDialogPurpose, setCustomerDialogPurpose] = useState(
     enumCustomerDialog.HIDE
   );
-  const [userInfo, setUserInfo] = useState(null);
   const { setAutoSyncSetelahKwitansiPertama } = useSyncSetting();
   const {
     setFutureVoucherEnabled,
@@ -103,6 +103,10 @@ const RegisterInvoice = ({ fullWidth = false }) => {
     handleNomorTransaksiSubmit,
     isShowVoucherRedeemModal,
     setIsShowVoucherRedeemModal,
+    showPaymentModal,
+    paymentUrl,
+    handleMidtransNavigationStateChange,
+    handleMidtransPaymentClose,
   } = useBillOperations({
     _id,
     kodeInvoice,
@@ -273,12 +277,6 @@ const RegisterInvoice = ({ fullWidth = false }) => {
       }
     }
     initAPPCONFIG();
-
-    async function getUserInfo() {
-      const userInfo = JSON.parse(await AsyncStorage.getItem("userInfo"));
-      setUserInfo(userInfo);
-    }
-    getUserInfo();
   }, [fiturEnabled]);
 
   const billActionsProps = useMemo(
@@ -408,6 +406,13 @@ const RegisterInvoice = ({ fullWidth = false }) => {
           }}
         />
       )}
+      <MidtransOptionModal
+        visible={showPaymentModal}
+        paymentUrl={paymentUrl}
+        onClose={handleMidtransPaymentClose}
+        onNavigationStateChange={handleMidtransNavigationStateChange}
+      />
+      
     </View>
   );
 };

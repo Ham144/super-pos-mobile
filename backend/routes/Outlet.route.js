@@ -36,15 +36,29 @@ const processLogo = async (logoBase64) => {
 };
 
 router.post("/registerOutlet", async (req, res) => {
-  const { namaOutlet, description, logo } = req.body;
-  const undefineds = [];
-  if (!namaOutlet) {
-    undefineds.push("namaOutlet");
+  const { namaOutlet, description, logo, usernameNTLM, passwordNTLM, noSeries, sellToCustNo } = req.body;
+
+  let kodeOutlet;
+  if (kodeOutletRequest) {
+    if (outletListDB.some((item) => item.kodeOutlet === kodeOutletRequest)) {
+      return res.status(400).json({ message: "kode outlet sudah digunakan" });
+    }
+    kodeOutlet = kodeOutletRequest;
+  } else {
+    return res.status(400).json({ message: "kode outlet diperlukan" });
   }
-  if (undefineds?.length) {
+
+  const undefinedsErrors = [];
+  if (!namaOutlet) {
+    undefinedsErrors.push("namaOutlet is required");
+  }
+  if(!kodeOutlet) {
+    undefinedsErrors.push("kodeOutlet is required");
+  }
+  if (undefinedsErrors?.length) {
     return res.status(400).json({
-      message: `Gagal, required field tidak diisi [${undefineds.join(", ")}]`,
-      undefineds,
+      message: `Gagal, required field tidak diisi: [${undefinedsErrors.join(", ")}]`,
+      undefinedsErrors,
     });
   }
 
@@ -52,7 +66,7 @@ router.post("/registerOutlet", async (req, res) => {
     const { namaOutlet, periodeSettlement, jamSettlement } = req.body;
     const outletListDB = await Outlet.find({});
     const isExisted = outletListDB.some(
-      (item) => item.namaOutlet === namaOutlet
+      (item) => item.namaOutlet === namaOutlet,
     );
     if (isExisted) {
       return res.status(500).json({ message: "outlet sudah ada" });
@@ -71,9 +85,6 @@ router.post("/registerOutlet", async (req, res) => {
         usersInOtherOutlets,
       });
     }
-
-    const lastKey = outletListDB[outletListDB.length - 1]?.kodeOutlet;
-    let newKey = Number(lastKey) + 1 || "01";
 
     // Create the new outlet with processed logo
     await Outlet.create({
@@ -128,7 +139,7 @@ router.put("/edit", async (req, res) => {
     // Filter valid kasir IDs
     const kasirListModified = req.body?.kasirList
       ? req.body?.kasirList?.filter(
-          (item) => item !== "" && item !== undefined && item != null
+          (item) => item !== "" && item !== undefined && item != null,
         )
       : [];
 
@@ -196,6 +207,7 @@ router.delete("/delete/:_id", async (req, res) => {
 //getoutletbyuserid
 router.get("/getOutlet/:userId", async (req, res) => {
   const { userId } = req.params;
+  console.log("hit /getOutlet", userId);
   if (!userId) {
     return res.status(500).json({
       message: "gagal mendapatkan outlet, karena user id tidak diberikan",
@@ -203,7 +215,7 @@ router.get("/getOutlet/:userId", async (req, res) => {
   }
   try {
     const outletDB = await Outlet.findOne({ kasirList: userId }).select(
-      "-logo" //jangan bawa logo, buat api baru spesial aja, endpoint ini banyak dipakai biar ga berat
+      "-logo", //jangan bawa logo, buat api baru spesial aja, endpoint ini banyak dipakai biar ga berat
     );
     if (!outletDB) {
       return res
@@ -228,7 +240,7 @@ router.post("/assignUserToOutlet", async (req, res) => {
     // Remove user from any existing outlet's kasirList first
     await Outlet.updateMany(
       { kasirList: userId },
-      { $pull: { kasirList: userId } }
+      { $pull: { kasirList: userId } },
     );
 
     // If a new outlet is specified, add the user to that outlet's kasirList
@@ -274,7 +286,7 @@ router.post("/linkBrandToOutlet", async (req, res) => {
     if (brandExists) {
       // Hapus brandId dari array
       const newBrandIds = outletDB?.brandIds?.filter(
-        (id) => id.toString() !== brandId
+        (id) => id.toString() !== brandId,
       );
       outletDB.brandIds = newBrandIds;
       await outletDB.save();

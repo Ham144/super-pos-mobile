@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -9,37 +9,81 @@ import {
 } from "react-native";
 import { useCurrentBill } from "../store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { initializePaymentMethod } from "../api";
 
-const DetailModal = ({ visible, setModalVisible }) => {
-  const { setPaymentMethod, setSpg } = useCurrentBill();
+const DetailModal = ({ visible, setModalVisible, handleCetakBill }) => {
+  const {
+    setPaymentMethod,
+    setSpg,
+    paymentMethod: currentPaymentMethod,
+    spg: currentSpg,
+  } = useCurrentBill();
   const [spgList, setSpgList] = useState([]);
   const [paymentMethodList, setPaymentMethodList] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [filteredSpgList, setFilteredSpgList] = useState([]);
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState();
-  const [selectedSpg, setSelectedSpg] = useState();
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null);
+  const [selectedSpg, setSelectedSpg] = useState(null);
+  const [selectedMode, setSelectedMode] = useState("fallback");
 
-  // Load payment methods from AsyncStorage
+  const midtransMethods = useMemo(
+    () =>
+      paymentMethodList.filter(
+        (method) => method.gatewayProvider === "midtrans",
+      ),
+    [paymentMethodList],
+  );
+
+  const fallbackMethods = useMemo(
+    () =>
+      paymentMethodList.filter((method) => method.gatewayProvider !== "midtrans"),
+    [paymentMethodList],
+  );
+
   useEffect(() => {
     const fetchPaymentMethods = async () => {
       try {
-        const storedPaymentMethods =
-          await AsyncStorage.getItem("paymentMethod");
+        const remotePaymentMethods = await initializePaymentMethod();
+        if (Array.isArray(remotePaymentMethods) && remotePaymentMethods.length) {
+          const activePaymentMethods = remotePaymentMethods.filter(
+            (method) => method.status,
+          );
+          setPaymentMethodList(activePaymentMethods);
+          await AsyncStorage.setItem(
+            "paymentMethod",
+            JSON.stringify(remotePaymentMethods),
+          );
+          return;
+        }
+
+        const storedPaymentMethods = await AsyncStorage.getItem("paymentMethod");
         if (storedPaymentMethods) {
           const parsedPaymentMethods = JSON.parse(storedPaymentMethods);
           const activePaymentMethods = parsedPaymentMethods.filter(
             (method) => method.status,
           );
           setPaymentMethodList(activePaymentMethods);
+          return;
         }
+
+        setPaymentMethodList([]);
       } catch (error) {
         console.error("Error fetching payment methods:", error);
+        const storedPaymentMethods = await AsyncStorage.getItem("paymentMethod");
+        if (storedPaymentMethods) {
+          const parsedPaymentMethods = JSON.parse(storedPaymentMethods);
+          const activePaymentMethods = parsedPaymentMethods.filter(
+            (method) => method.status,
+          );
+          setPaymentMethodList(activePaymentMethods);
+          return;
+        }
+        setPaymentMethodList([]);
       }
     };
     fetchPaymentMethods();
-  }, []);
+  }, [visible]);
 
-  // Load SPG list from storage
   useEffect(() => {
     const fetchSpgList = async () => {
       try {
@@ -48,54 +92,151 @@ const DetailModal = ({ visible, setModalVisible }) => {
           const parsedList = JSON.parse(spgListFromStorage);
           setSpgList(parsedList);
           setFilteredSpgList(parsedList);
+          return;
         }
+        setSpgList([]);
+        setFilteredSpgList([]);
       } catch (error) {
         console.error("Error fetching SPG list:", error);
+        setSpgList([]);
+        setFilteredSpgList([]);
       }
     };
     fetchSpgList();
-  }, []);
+  }, [visible]);
 
-  // Handle payment method selection
+  useEffect(() => {
+    if (!visible) return;
+
+    const normalizedCurrentPaymentMethod =
+      paymentMethodList.find((method) => method.method === currentPaymentMethod) ||
+      null;
+    const normalizedCurrentSpg =
+      spgList.find((item) => item?._id === currentSpg?._id || item?._id === currentSpg) ||
+      (currentSpg && typeof currentSpg === "object" ? currentSpg : null);
+
+    setSelectedPaymentMethod(normalizedCurrentPaymentMethod);
+    setSelectedMode(
+      normalizedCurrentPaymentMethod?.gatewayProvider === "midtrans"
+        ? "midtrans"
+        : "fallback",
+    );
+    setSelectedSpg(normalizedCurrentSpg);
+  }, [visible, currentPaymentMethod, currentSpg, paymentMethodList, spgList]);
+
+  useEffect(() => {
+    if (!visible) return;
+    setSearchQuery("");
+    setFilteredSpgList(spgList);
+  }, [visible, spgList]);
+
+  useEffect(() => {
+    if (!visible) return;
+
+    if (selectedMode === "fallback" && !fallbackMethods.length && midtransMethods.length) {
+      setSelectedMode("midtrans");
+      if (!selectedPaymentMethod || selectedPaymentMethod.gatewayProvider !== "midtrans") {
+        setSelectedPaymentMethod(midtransMethods[0]);
+      }
+    }
+
+    if (selectedMode === "midtrans" && !midtransMethods.length && fallbackMethods.length) {
+      setSelectedMode("fallback");
+      if (!selectedPaymentMethod || selectedPaymentMethod.gatewayProvider === "midtrans") {
+        setSelectedPaymentMethod(fallbackMethods[0]);
+      }
+    }
+  }, [visible, selectedMode, midtransMethods, fallbackMethods, selectedPaymentMethod]);
+
   const handleSelectPaymentMethod = (method) => {
-    setSelectedPaymentMethod(method.method);
+    setSelectedPaymentMethod(method);
+    setSelectedMode(method.gatewayProvider === "midtrans" ? "midtrans" : "fallback");
   };
 
-  // Handle SPG selection
   const handleSelectSpg = (spgItem) => {
     setSelectedSpg(spgItem);
   };
 
-  // Handle search input change
   const handleSearch = (text) => {
     setSearchQuery(text);
     if (text.trim() === "") {
       setFilteredSpgList(spgList);
-    } else {
-      const filtered = spgList.filter((spg) =>
-        spg.name.toLowerCase().includes(text.toLowerCase()),
+      return;
+    }
+
+    const filtered = spgList.filter((spg) =>
+      String(spg.name || "")
+        .toLowerCase()
+        .includes(text.toLowerCase()),
+    );
+    setFilteredSpgList(filtered);
+  };
+
+  const handleKonfirmasi = async () => {
+    if (!selectedSpg || !selectedPaymentMethod) {
+      return;
+    }
+
+    setSpg(selectedSpg);
+    setPaymentMethod(selectedPaymentMethod.method);
+    setModalVisible(false);
+
+    if (handleCetakBill) {
+      await handleCetakBill();
+    }
+  };
+
+  const renderMethodList = (methods) => {
+    if (!methods.length) {
+      return (
+        <View className="p-4 items-center">
+          <Text className="text-gray-500 text-center">
+            Tidak ada metode pembayaran aktif untuk mode ini.
+          </Text>
+        </View>
       );
-      setFilteredSpgList(filtered);
     }
-  };
 
-  // Handle confirmation
-  const handleKonfirmasi = () => {
-    if (selectedPaymentMethod && selectedSpg) {
-      setPaymentMethod(selectedPaymentMethod);
-      setSpg(selectedSpg);
-      setModalVisible(false);
-    }
-  };
+    return methods.map((method) => {
+      const isSelected =
+        selectedPaymentMethod?._id && selectedPaymentMethod._id === method._id;
 
-  // Format currency
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat("id-ID", {
-      style: "currency",
-      currency: "IDR",
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount || 0);
+      return (
+        <TouchableOpacity
+          key={method._id || method.method}
+          className={`mb-2 rounded-xl border px-3 py-3 ${
+            isSelected ? "border-blue-600 bg-blue-50" : "border-gray-200 bg-white"
+          }`}
+          onPress={() => handleSelectPaymentMethod(method)}
+        >
+          <View className="flex-row items-center justify-between">
+            <View className="flex-1 pr-3">
+              <Text className="font-semibold text-gray-800">{method.method}</Text>
+              <Text className="text-xs text-gray-500">
+                {method.gatewayProvider === "midtrans"
+                  ? "Gateway Midtrans"
+                  : "Fallback manual"}
+              </Text>
+              <View className="mt-1 flex-row flex-wrap gap-2">
+                {method.discount > 0 && (
+                  <Text className="text-xs text-green-600">
+                    Diskon: {method.discount}%
+                  </Text>
+                )}
+                {method.additional_fee > 0 && (
+                  <Text className="text-xs text-red-600">
+                    Biaya tambahan: {method.additional_fee}
+                  </Text>
+                )}
+              </View>
+            </View>
+            <Text className="text-sm font-bold text-blue-600">
+              {isSelected ? "✓" : ""}
+            </Text>
+          </View>
+        </TouchableOpacity>
+      );
+    });
   };
 
   return (
@@ -106,12 +247,11 @@ const DetailModal = ({ visible, setModalVisible }) => {
       onRequestClose={() => setModalVisible(false)}
     >
       <View className="flex-1 justify-center items-center bg-black/50 p-4">
-        <View className="w-full bg-white rounded-xl p-4">
-          {/* Header */}
+        <View className="w-full max-w-3xl bg-white rounded-xl p-4">
           <View className="flex-col justify-between items-center mb-3">
             <View className="flex-row justify-between items-center w-full">
               <Text className="text-xl font-bold text-gray-800 font-aldrich text-center">
-                Pilih SPG
+                Pilih SPG & Metode Bayar
               </Text>
               <TouchableOpacity
                 onPress={() => setModalVisible(false)}
@@ -120,95 +260,132 @@ const DetailModal = ({ visible, setModalVisible }) => {
                 <Text className="text-lg text-red-500 font-semibold">✕</Text>
               </TouchableOpacity>
             </View>
+            <Text className="mt-1 text-xs text-gray-500 text-center">
+              Pilih SPG terlebih dahulu, lalu pilih metode pembayaran:
+              Midtrans atau fallback manual.
+            </Text>
           </View>
 
-          {/* Content */}
-          <ScrollView className="max-h-[50vh]">
-            <View className="flex-row gap-4">
-              {/* Payment Methods List */}
-              {/* <View className="flex-1 bg-gray-100 rounded-lg">
-                <View className="max-h-[300px]">
-                  <ScrollView className="p-2 py-5">
-                    {paymentMethodList.map((method, i) => (
-                      <TouchableOpacity
-                        key={i}
-                        className={`p-3 border-b border-gray-200 ${
-                          selectedPaymentMethod === method.method
-                            ? "bg-blue-100"
-                            : ""
-                        }`}
-                        onPress={() => handleSelectPaymentMethod(method)}
-                      >
-                        <View className="flex-col">
-                          <Text className="text-gray-800 font-semibold">
-                            {method.method}{" "}
-                            {selectedPaymentMethod === method.method ? "✓" : ""}
-                          </Text>
-                          {method.discount > 0 && (
-                            <Text className="text-green-600 text-sm">
-                              Diskon: {method.discount}%
-                            </Text>
-                          )}
-                          {method.additional_fee > 0 && (
-                            <Text className="text-red-600 text-sm">
-                              Biaya tambahan:{" "}
-                              {formatCurrency(method.additional_fee)}
-                            </Text>
-                          )}
-                        </View>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-              </View> */}
+          <ScrollView className="max-h-[60vh]">
+            <View className="gap-4">
+              <View className="rounded-xl bg-gray-100 p-3">
+                <Text className="mb-2 text-sm font-bold text-gray-700">
+                  Pilih SPG
+                </Text>
+                <TextInput
+                  className="bg-white p-2 rounded-md border border-gray-300"
+                  placeholder="Cari nama SPG..."
+                  value={searchQuery}
+                  onChangeText={handleSearch}
+                />
+                <View className="mt-3 max-h-[220px]">
+                  <ScrollView>
+                    {filteredSpgList.map((spgItem) => {
+                      const isSelected =
+                        selectedSpg && spgItem._id === selectedSpg._id;
 
-              {/* SPG List */}
-              <View className="flex-1 bg-gray-100 rounded-lg">
-                <View className="p-2 border-b border-gray-300">
-                  <TextInput
-                    className="bg-white p-2 rounded-md border border-gray-300"
-                    placeholder="Cari nama SPG..."
-                    value={searchQuery}
-                    onChangeText={handleSearch}
-                  />
-                </View>
-                <View className="max-h-[300px]">
-                  <ScrollView className="p-2 py-5">
-                    {filteredSpgList.map((spgItem) => (
-                      <TouchableOpacity
-                        key={spgItem._id || spgItem.name}
-                        className={`p-2 border-b border-gray-200 ${
-                          selectedSpg && spgItem._id === selectedSpg._id
-                            ? "bg-blue-100"
-                            : ""
-                        }`}
-                        onPress={() => handleSelectSpg(spgItem)}
-                      >
-                        <View className="flex-row items-center justify-between">
-                          <Text className="text-gray-800">
-                            {spgItem.name}{" "}
-                            {selectedSpg && spgItem._id === selectedSpg._id
-                              ? "✓"
-                              : ""}
-                          </Text>
-                          <Text className="text-gray-600">{spgItem.email}</Text>
-                        </View>
-                      </TouchableOpacity>
-                    ))}
+                      return (
+                        <TouchableOpacity
+                          key={spgItem._id || spgItem.name}
+                          className={`mb-2 rounded-xl border px-3 py-3 ${
+                            isSelected
+                              ? "border-blue-600 bg-blue-50"
+                              : "border-gray-200 bg-white"
+                          }`}
+                          onPress={() => handleSelectSpg(spgItem)}
+                        >
+                          <View className="flex-row items-center justify-between">
+                            <View className="flex-1 pr-3">
+                              <Text className="font-semibold text-gray-800">
+                                {spgItem.name}
+                              </Text>
+                              <Text className="text-xs text-gray-500">
+                                Target: Rp{" "}
+                                {Number(
+                                  spgItem.targetHargaPenjualan || 0,
+                                ).toLocaleString("id-ID")}{" "}
+                                | Qty {spgItem.targetQuantityPenjualan || 0}
+                              </Text>
+                            </View>
+                            <Text className="text-sm font-bold text-blue-600">
+                              {isSelected ? "✓" : ""}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
                     {filteredSpgList.length === 0 && (
                       <View className="p-4 items-center">
-                        <Text className="text-gray-500">
-                          Tidak ada SPG dengan nama tersebut
+                        <Text className="text-gray-500 text-center">
+                          Tidak ditemukan SPG. Tambahkan di website lalu sinkronkan
+                          ke mobile.
                         </Text>
                       </View>
                     )}
                   </ScrollView>
                 </View>
               </View>
+
+              <View className="rounded-xl bg-gray-100 p-3">
+                <Text className="mb-2 text-sm font-bold text-gray-700">
+                  Pilih Mode Pembayaran
+                </Text>
+                <View className="flex-row gap-2">
+                  <TouchableOpacity
+                    className={`flex-1 rounded-xl border px-3 py-3 ${
+                      selectedMode === "midtrans"
+                        ? "border-blue-600 bg-blue-50"
+                        : "border-gray-200 bg-white"
+                    }`}
+                    onPress={() => {
+                      setSelectedMode("midtrans");
+                      if (midtransMethods.length && selectedPaymentMethod?.gatewayProvider !== "midtrans") {
+                        setSelectedPaymentMethod(midtransMethods[0]);
+                      }
+                    }}
+                  >
+                    <Text className="font-semibold text-gray-800">Midtrans</Text>
+                    <Text className="text-xs text-gray-500">
+                      Gateway online
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    className={`flex-1 rounded-xl border px-3 py-3 ${
+                      selectedMode === "fallback"
+                        ? "border-blue-600 bg-blue-50"
+                        : "border-gray-200 bg-white"
+                    }`}
+                    onPress={() => {
+                      setSelectedMode("fallback");
+                      if (fallbackMethods.length && selectedPaymentMethod?.gatewayProvider === "midtrans") {
+                        setSelectedPaymentMethod(fallbackMethods[0]);
+                      }
+                    }}
+                  >
+                    <Text className="font-semibold text-gray-800">Fallback</Text>
+                    <Text className="text-xs text-gray-500">
+                      Manual / offline
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View className="mt-3">
+                  <Text className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    {selectedMode === "midtrans"
+                      ? "Metode Midtrans"
+                      : "Metode Fallback"}
+                  </Text>
+                  <ScrollView className="max-h-[220px]">
+                    {selectedMode === "midtrans"
+                      ? renderMethodList(midtransMethods)
+                      : renderMethodList(fallbackMethods)}
+                  </ScrollView>
+                </View>
+              </View>
             </View>
           </ScrollView>
 
-          {/* Buttons */}
           <View className="flex-row gap-x-2 mt-4">
             <TouchableOpacity
               className="flex-1 bg-gray-300 py-3 rounded-lg active:opacity-80"
@@ -220,15 +397,15 @@ const DetailModal = ({ visible, setModalVisible }) => {
             </TouchableOpacity>
             <TouchableOpacity
               className={`flex-1 py-3 rounded-lg active:opacity-80 ${
-                selectedPaymentMethod && selectedSpg
+                selectedSpg && selectedPaymentMethod
                   ? "bg-blue-600"
                   : "bg-blue-300"
               }`}
-              disabled={!selectedPaymentMethod || !selectedSpg}
+              disabled={!selectedSpg || !selectedPaymentMethod}
               onPress={handleKonfirmasi}
             >
               <Text className="text-center text-white font-semibold">
-                Konfirmasi
+                Konfirmasi & Lanjut
               </Text>
             </TouchableOpacity>
           </View>

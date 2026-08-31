@@ -543,7 +543,7 @@ export const printHelperNote = async ({
       printer.println("Catatan:");
       printer.println("--");
     }
-
+    
     printer.cut();
     printer.execute();
     return true;

@@ -1,5 +1,5 @@
 import { View, Text } from "react-native";
-import React, { useState } from "react";
+import { useState } from "react";
 import { useCurrentBill } from "../store";
 import { FlatList } from "react-native";
 import { ArrowBigRightDash, CircleX, Pencil } from "lucide-react-native";
@@ -12,7 +12,7 @@ const CurrentBill = () => {
 
   //zustand
   const { currentBill, removeFromCurrentBill } = useCurrentBill();
-
+  
   return (
     <FlatList
       className="flex flex-col max-h-44 min-h-28 overflow-y-auto"

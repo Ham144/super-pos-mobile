@@ -11,13 +11,14 @@ import {
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { login, getBaseUrl, pingBackend } from "../api";
-import { Settings, X } from "lucide-react-native";
+import { login, loginLdap, getBaseUrl, pingBackend } from "../api";
+import { Settings, X, Smartphone, ShieldCheck } from "lucide-react-native";
 import { BASE_URL, BACKEND_URLS } from "../constant";
 
 const LoginScreen = ({ onLoginSuccess }) => {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [authMethod, setAuthMethod] = useState("app");
   const [error, setError] = useState("");
   const [showBackendModal, setShowBackendModal] = useState(false);
   const [backendUrl, setBackendUrl] = useState("");
@@ -32,13 +33,11 @@ const LoginScreen = ({ onLoginSuccess }) => {
     await AsyncStorage.setItem("BASE_URL", JSON.stringify(normalizedUrl));
   };
 
-  // Backend URL templates
   const BACKEND_TEMPLATES = {
     production: BACKEND_URLS.production,
     development: BACKEND_URLS.development,
   };
 
-  // Query for checking backend connection
   const { data: isConnected } = useQuery({
     queryKey: ["ping", backendUrl],
     queryFn: () => pingBackend(backendUrl),
@@ -46,7 +45,6 @@ const LoginScreen = ({ onLoginSuccess }) => {
     retry: 1,
   });
 
-  // Load current backend URL
   useEffect(() => {
     const loadBackendUrl = async () => {
       const url = await getBaseUrl();
@@ -55,7 +53,6 @@ const LoginScreen = ({ onLoginSuccess }) => {
     loadBackendUrl();
   }, []);
 
-  // Save backend URL
   const handleSaveBackend = async () => {
     try {
       await persistBackendUrl(backendUrl);
@@ -66,7 +63,12 @@ const LoginScreen = ({ onLoginSuccess }) => {
     }
   };
 
-  const { mutate: handleLogin, isPending } = useMutation({
+  const handleAuthMethodChange = (method) => {
+    setAuthMethod(method);
+    setError("");
+  };
+
+  const { mutate: handleLogin, isPending: isLoginPending } = useMutation({
     mutationFn: async () => {
       const response = await login(username, password);
       return response;
@@ -82,6 +84,34 @@ const LoginScreen = ({ onLoginSuccess }) => {
     },
   });
 
+  const { mutate: handleLoginLdap, isPending: isLoginLdapPending } =
+    useMutation({
+      mutationFn: async () => {
+        const response = await loginLdap(username, password);
+        return response;
+      },
+      onSuccess: (response) => {
+        if (response?.data?.token) {
+          AsyncStorage.setItem("token", response?.data?.token);
+          onLoginSuccess();
+        }
+      },
+      onError: (error) => {
+        setError(error.message || "Terjadi kesalahan saat login LDAP");
+      },
+    });
+
+  const isPending = isLoginPending || isLoginLdapPending;
+
+  const handleSubmit = () => {
+    setError("");
+    if (authMethod === "app") {
+      handleLogin();
+    } else {
+      handleLoginLdap();
+    }
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.card}>
@@ -94,19 +124,72 @@ const LoginScreen = ({ onLoginSuccess }) => {
             <Settings size={20} color="#4B5563" />
           </TouchableOpacity>
         </View>
-        <Text style={styles.subtitle}>Sign in to continue</Text>
+        <Text style={styles.subtitle}>Pilih metode login dan masuk</Text>
+
+        <View style={styles.authMethodSwitcher}>
+          <TouchableOpacity
+            style={[
+              styles.authMethodButton,
+              authMethod === "app" && styles.authMethodButtonActive,
+            ]}
+            onPress={() => handleAuthMethodChange("app")}
+          >
+            <Smartphone
+              size={14}
+              color={authMethod === "app" ? "#1D4ED8" : "#6B7280"}
+            />
+            <Text
+              style={[
+                styles.authMethodText,
+                authMethod === "app" && styles.authMethodTextActive,
+              ]}
+            >
+              App Account
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.authMethodButton,
+              authMethod === "ldap" && styles.authMethodButtonActive,
+            ]}
+            onPress={() => handleAuthMethodChange("ldap")}
+          >
+            <ShieldCheck
+              size={14}
+              color={authMethod === "ldap" ? "#1D4ED8" : "#6B7280"}
+            />
+            <Text
+              style={[
+                styles.authMethodText,
+                authMethod === "ldap" && styles.authMethodTextActive,
+              ]}
+            >
+              LDAP / SSO
+            </Text>
+          </TouchableOpacity>
+        </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
+        <Text style={styles.inputLabel}>
+          {authMethod === "ldap"
+            ? "Active Directory Username"
+            : "Username"}
+        </Text>
         <TextInput
           style={styles.input}
-          placeholder="Username"
+          placeholder={
+            authMethod === "ldap"
+              ? "Masukkan username Active Directory"
+              : "Username"
+          }
           value={username}
           onChangeText={setUsername}
           autoCapitalize="none"
-          keyboardType="email-address"
+          keyboardType="default"
         />
 
+        <Text style={styles.inputLabel}>Password</Text>
         <TextInput
           style={styles.input}
           placeholder="Password"
@@ -117,13 +200,15 @@ const LoginScreen = ({ onLoginSuccess }) => {
 
         <TouchableOpacity
           style={styles.button}
-          onPress={() => handleLogin()}
+          onPress={handleSubmit}
           disabled={isPending}
         >
           {isPending ? (
             <ActivityIndicator size="small" color="white" />
           ) : (
-            <Text style={styles.buttonText}>Login</Text>
+            <Text style={styles.buttonText}>
+              Masuk via {authMethod === "ldap" ? "LDAP" : "App"}
+            </Text>
           )}
         </TouchableOpacity>
       </View>
@@ -149,7 +234,6 @@ const LoginScreen = ({ onLoginSuccess }) => {
               </TouchableOpacity>
             </View>
 
-            {/* Connection Status */}
             <View
               className={`p-3 rounded-lg mb-4 ${
                 isConnected ? "bg-green-100" : "bg-red-100"
@@ -170,7 +254,6 @@ const LoginScreen = ({ onLoginSuccess }) => {
               </TouchableOpacity>
             </View>
 
-            {/* Backend URL Input */}
             <View className="mb-4">
               <Text className="text-sm font-medium text-gray-700 mb-1">
                 Backend URL
@@ -185,7 +268,6 @@ const LoginScreen = ({ onLoginSuccess }) => {
               />
             </View>
 
-            {/* Quick Switch Buttons */}
             <View className="mb-4">
               <Text className="text-sm font-medium text-gray-700 mb-2">
                 Quick Switch
@@ -208,7 +290,6 @@ const LoginScreen = ({ onLoginSuccess }) => {
               </View>
             </View>
 
-            {/* Action Buttons */}
             <View className="flex-row gap-2">
               <TouchableOpacity
                 className={`flex-1 justify-center p-3 rounded-lg ${
@@ -269,7 +350,44 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#6b7280",
     textAlign: "center",
-    marginBottom: 24,
+    marginBottom: 16,
+  },
+  authMethodSwitcher: {
+    flexDirection: "row",
+    backgroundColor: "#F3F4F6",
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 20,
+  },
+  authMethodButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  authMethodButtonActive: {
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  authMethodText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#6B7280",
+  },
+  authMethodTextActive: {
+    color: "#1D4ED8",
+  },
+  inputLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#374151",
+    marginBottom: 6,
   },
   input: {
     width: "100%",

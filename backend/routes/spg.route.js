@@ -3,29 +3,30 @@ import SpgRefrensi from "../models/SpgRefrensi.model.js";
 import Outlet from "../models/Outlet.model.js";
 
 const router = Router();
+
+const parseNumber = (value, fallback = 0) => {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : fallback;
+};
+
 router.post("/register", async (req, res) => {
-  const {
-    name,
-    telepon,
-    email,
-    targetHargaPenjualan,
-    targetQuantityPenjualan,
-  } = req.body;
-  if (!name) {
+  const { name, targetHargaPenjualan, targetQuantityPenjualan } = req.body;
+
+  if (!name?.trim()) {
     return res.status(400).json({ message: "Nama spg harus diisi" });
   }
+  
   try {
     await SpgRefrensi.create({
-      name: name,
-      telepon: telepon,
-      email: email,
-      targetHargaPenjualan: targetHargaPenjualan
-        ? parseFloat(targetHargaPenjualan)
-        : 0,
-      targetQuantityPenjualan: targetQuantityPenjualan
-        ? parseInt(targetQuantityPenjualan)
-        : 0,
+      name: name.trim(),
+      targetHargaPenjualan: parseNumber(targetHargaPenjualan, 0),
+      targetQuantityPenjualan: parseNumber(targetQuantityPenjualan, 0),
     });
+
     return res.json({ message: "Berhasil membuat spg baru" });
   } catch (error) {
     return res.status(400).json({ message: "gagal membuat spg", error });
@@ -33,25 +34,34 @@ router.post("/register", async (req, res) => {
 });
 
 router.put("/edit", async (req, res) => {
-  const { id } = req.body;
+  const { id, name, targetHargaPenjualan, targetQuantityPenjualan } = req.body;
+
+  if (!id) {
+    return res.status(400).json({ message: "diperlukan id spg" });
+  }
+
+  if (!name?.trim()) {
+    return res.status(400).json({ message: "Nama spg harus diisi" });
+  }
+
   try {
-    await SpgRefrensi.findByIdAndUpdate(
-      { _id: id },
+    const updated = await SpgRefrensi.findByIdAndUpdate(
+      id,
       {
         $set: {
-          name: req?.body?.name,
-          telepon: req?.body?.telepon,
-          email: req?.body?.email,
-          targetHargaPenjualan: req?.body?.targetHargaPenjualan
-            ? parseFloat(req?.body?.targetHargaPenjualan)
-            : 0,
-          targetQuantityPenjualan: req?.body?.targetQuantityPenjualan
-            ? parseInt(req?.body?.targetQuantityPenjualan)
-            : 0,
+          name: name.trim(),
+          targetHargaPenjualan: parseNumber(targetHargaPenjualan, 0),
+          targetQuantityPenjualan: parseNumber(targetQuantityPenjualan, 0),
         },
       },
+      { new: true, runValidators: true },
     );
-    return res.json({ message: "berhasil memperbarui spg" });
+
+    if (!updated) {
+      return res.status(404).json({ message: "spg tidak ditemukan" });
+    }
+
+    return res.json({ message: "berhasil memperbarui spg", data: updated });
   } catch (error) {
     return res.status(400).json({ message: "gagal memperbarui spg", error });
   }
@@ -59,7 +69,7 @@ router.put("/edit", async (req, res) => {
 
 router.get("/spgList", async (req, res) => {
   try {
-    const response = await SpgRefrensi.find();
+    const response = await SpgRefrensi.find().sort({ name: 1 });
     return res.json({ message: "berhasil mendapatkan spg", data: response });
   } catch (error) {
     return res.status(400).json({ message: "gagal mendapatkan spg", error });
@@ -73,19 +83,19 @@ router.get("/spgList/mobile", async (req, res) => {
       kasirList: {
         $in: [userId],
       },
-    }).populate(
-      "spgList",
-      "name email totalHargaPenjualan totalQuantityPenjualan targetHargaPenjualan targetQuantityPenjualan telepon",
-    );
+    }).select("spgList");
+
     if (!myOutlet) {
       return res
         .status(400)
         .json({ message: "outlet tidak ditemukan untuk akun anda" });
     }
+
     const response = await SpgRefrensi.find({
       _id: { $in: myOutlet.spgList },
       isDisabled: false,
-    });
+    }).sort({ name: 1 });
+
     return res.json({ message: "berhasil mendapatkan spg", data: response });
   } catch (error) {
     return res.status(400).json({ message: "gagal mendapatkan spg", error });
@@ -94,20 +104,23 @@ router.get("/spgList/mobile", async (req, res) => {
 
 router.delete("/disable/:spgId", async (req, res) => {
   const { spgId } = req.params;
+
   if (!spgId) {
     return res.status(400).json({ message: "diperlukan spgId" });
   }
+
   const spgDB = await SpgRefrensi.findById(spgId);
   if (!spgDB) {
     return res.status(400).json({ message: "spg tidak ditemukan" });
   }
+
   try {
     const akanDisable = !spgDB.isDisabled;
+
     await SpgRefrensi.findByIdAndUpdate(spgId, {
       isDisabled: akanDisable,
     });
 
-    // lepas dari outlet saat dinonaktifkan agar tidak ikut referensi sync
     if (akanDisable) {
       await Outlet.updateMany(
         { spgList: spgId },
@@ -127,6 +140,11 @@ router.delete("/disable/:spgId", async (req, res) => {
 
 router.post("/getSpgById", async (req, res) => {
   const { id } = req.body;
+
+  if (!id) {
+    return res.status(400).json({ message: "diperlukan id spg" });
+  }
+
   try {
     const spg = await SpgRefrensi.findById(id);
     return res.json({ message: "berhasil mendapatkan spg", data: spg });

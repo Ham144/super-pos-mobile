@@ -6,11 +6,13 @@ import { ActivityIndicator, Image, Text, View } from "react-native";
 import { StyleSheet } from "react-native";
 
 const queryClient = new QueryClient();
+const logo = require("@/assets/internal-pos.png");
+
 export default function Layout() {
   const [fontsLoaded] = useFonts({
-    gilroyRegular: require("../assets/fonts/Gilroy-Regular.ttf"),
-    gilroyBold: require("../assets/fonts/Gilroy-Bold.ttf"),
-    gilroyLight: require("../assets/fonts/Gilroy-Light.ttf"),
+    gilroyRegular: require("@/assets/fonts/Gilroy-Regular.ttf"),
+    gilroyBold: require("@/assets/fonts/Gilroy-Bold.ttf"),
+    gilroyLight: require("@/assets/fonts/Gilroy-Light.ttf"),
   });
 
   // Show loading screen while fonts are loading
@@ -32,7 +34,7 @@ export default function Layout() {
         </View>
         <Image
           style={{ width: 200, height: 200, resizeMode: "contain" }}
-          source={require("../assets/internal-pos.png")}
+          source={logo}
         />
       </View>
     );

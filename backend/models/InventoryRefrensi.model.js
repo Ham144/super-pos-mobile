@@ -7,8 +7,7 @@ const InventoryRefrensiSchema = new mongoose.Schema(
     },
     sku: {
       type: String, //ini sku jg, ribet mengganti semua keyword sku jadi _id kodingan lama
-      required: true,
-      unique: true,
+      required: true
     },
     isDisabled: {
       type: Boolean,
@@ -37,6 +36,10 @@ const InventoryRefrensiSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    outlet: {
+      type: mongoose.Schema.Types.ObjectId,
+      required: true
+    }
     //memeriksa perubahan yang dilakukan cms(mengurangi response size)
   },
   {
@@ -44,8 +47,10 @@ const InventoryRefrensiSchema = new mongoose.Schema(
   }
 );
 
+InventoryRefrensiSchema.index({sku : 1, outlet: 1})
 const InventoryRefrensi = mongoose.model(
   "InventoryRefrensi",
   InventoryRefrensiSchema
 );
+
 export default InventoryRefrensi;

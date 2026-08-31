@@ -39,7 +39,7 @@ const ModalPickKasir = forwardRef(({ callback, currentSelected = [] }, ref) => {
   const filteredUsers = userList?.data?.filter(
     (user) =>
       user.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.email?.toLowerCase().includes(searchTerm.toLowerCase())
+      user.email?.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
   // Handle selecting/deselecting a user
@@ -115,7 +115,6 @@ const ModalPickKasir = forwardRef(({ callback, currentSelected = [] }, ref) => {
               <thead className="bg-gray-50 sticky top-0">
                 <tr>
                   <th className="px-4 py-2 text-left">Nama</th>
-                  <th className="px-4 py-2 text-left">Email</th>
                   <th className="px-4 py-2 text-center w-16">Pilih</th>
                 </tr>
               </thead>
@@ -129,9 +128,6 @@ const ModalPickKasir = forwardRef(({ callback, currentSelected = [] }, ref) => {
                     onClick={() => toggleUserSelection(user)}
                   >
                     <td className="px-4 py-2">{user.username || "-"}</td>
-                    <td className="px-4 py-2 text-gray-600">
-                      {user.email || "-"}
-                    </td>
                     <td className="px-4 py-2 text-center">
                       <input
                         type="checkbox"
@@ -162,7 +158,10 @@ const ModalPickKasir = forwardRef(({ callback, currentSelected = [] }, ref) => {
           >
             Batal
           </button>
-          <button className="btn btn-primary" onClick={applySelections}>
+          <button
+            className="btn btn-primary text-secondary"
+            onClick={applySelections}
+          >
             Terapkan ({localSelection.length})
           </button>
         </div>

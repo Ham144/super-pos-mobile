@@ -81,5 +81,29 @@ bug fixing 2026-06-10
 [fail] item isDisabled harusnya tidak muncul di mobile
 [x] optimasi kecepatan lanjutan
 
-// 
-[] new_pos: 
+// new clone
+[x] super_pos_csi: inventory dan qty juga bisa disambungkan dengan nav
+[x] super_pos_csi: bayarnya ke payment gateway
+[x] bisa login dengan ldap
+[] sempurkanan pendekatan inventory "stateless" dan 'offline'
+[] super_pos_csi: bisa input biaya berdasarkan category yg di config
+[] super_pos_csi: check stock berdasarkan wilayah (SOAP)
+# optimaasi lanjutan
+[] buat sku offline di sqlite agar lebih ringan
+
+note: 
+## alur logika outlet mode stateless: 
+### jangan pakai syncMobileRoute, buat endpoint baru aja. syncMobileRoute biar untuk outlet mode offline
+- di sebelah kiri tampilkan daftar inventory langsung dari GetInventoryByLocationMultiple dengan cara get partial yang terlihat di layar
+(optional layer start )
+- klik tombol cetak bill: jika kasir  menetapkan diskon maka hanya simpan bill ke db tanpa dengan status menunggu konfirmasi approve discount 
+(optional layer start)
+- klik tombol cetak bill: saat tombol cetak bill (customer). jalankan fungsi SalesOrderAutoPostingShip dan simpan bill ke db untuk tau apakah di gudang ready
+- struk customer akan keluar dan diberikan ke customer untuk dibaca
+(optional layer start)
+- user meminta sku tertentu di hapus/diedit: maka GetSalesShipmentLines -> WsUndoShipment 
+(optional layer end)
+- tombol bayar berhasil: ubah status bill done: true, jalankan WsPostInvoiceSO
+(optional layer start )
+- void: di keesokan hari user ingin semua pembelian sku dalam 1 bill dibatalkan jalankan GetSalesShipmentLines -> WsUndoShipment 
+(optional layer end)

@@ -362,62 +362,7 @@ const ItemLibrary = () => {
       toast.error(error?.response?.data?.message || "gagal membuat inventory");
     },
   });
-  const exportCSV = () => {
-    const csvRows = [];
-    const headers = ["Sku", "Harga Dasar", "Deskripsi", "Brand", "Barcode"];
-    csvRows.push(headers.join(";"));
-
-    // Contoh data template (bisa disesuaikan atau dikosongkan)
-    const templateData = [
-      {
-        sku: "SKU001",
-        RpHargaDasar: 15000,
-        description: "Contoh Deskripsi Produk 1",
-        brand: "Contoh Brand A",
-        barcodeItem: "CB001",
-      },
-      {
-        sku: "SKU002",
-        RpHargaDasar: 30000,
-        description: "Contoh Deskripsi Produk 2",
-        brand: "Contoh Brand B",
-        barcodeItem: "CB002",
-      },
-      {
-        sku: "",
-        RpHargaDasar: "",
-        description: "",
-        brand: "",
-        barcodeItem: "",
-      },
-      // Anda bisa menambahkan lebih banyak baris contoh di sini
-    ];
-
-    templateData.forEach((item) => {
-      const row = [
-        item.sku,
-        item.RpHargaDasar,
-        item.description,
-        item.brand,
-        item.barcodeItem,
-      ];
-      csvRows.push(row.join(";"));
-    });
-
-    const blob = new Blob(["\uFEFF" + csvRows.join("\n")], {
-      type: "text/csv;charset=utf-8;",
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download =
-      "contoh_csv_untuk_create_or_update_inventory_tak_menerima_quantity.csv";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
-
+  
   const { mutateAsync: handleImportCsv, isPending: isImporting } = useMutation({
     mutationFn: importInventoryCsv,
     onSuccess: (response) => {
@@ -728,6 +673,62 @@ const ItemLibrary = () => {
     setSortConfig({ field, direction });
   };
 
+  const exportCSV = () => {
+    const csvRows = [];
+    const headers = ["Sku", "Harga Dasar", "Deskripsi", "Brand", "Barcode"];
+    csvRows.push(headers.join(";"));
+
+    // Contoh data template (bisa disesuaikan atau dikosongkan)
+    const templateData = [
+      {
+        sku: "SKU001",
+        RpHargaDasar: 15000,
+        description: "Contoh Deskripsi Produk 1",
+        brand: "Contoh Brand A",
+        barcodeItem: "CB001",
+      },
+      {
+        sku: "SKU002",
+        RpHargaDasar: 30000,
+        description: "Contoh Deskripsi Produk 2",
+        brand: "Contoh Brand B",
+        barcodeItem: "CB002",
+      },
+      {
+        sku: "",
+        RpHargaDasar: "",
+        description: "",
+        brand: "",
+        barcodeItem: "",
+      },
+      // Anda bisa menambahkan lebih banyak baris contoh di sini
+    ];
+
+    templateData.forEach((item) => {
+      const row = [
+        item.sku,
+        item.RpHargaDasar,
+        item.description,
+        item.brand,
+        item.barcodeItem,
+      ];
+      csvRows.push(row.join(";"));
+    });
+
+    const csvContent = "data:text/csv;charset=utf-8," + csvRows.join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute(
+      "download",
+      "contoh_csv_untuk_create_or_update_inventory_tak_menerima_quantity.csv",
+    ); // Nama file template yang lebih sesuai
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  
   return (
     <div
       className={`min-h-screen bg-gradient-to-br from-blue-50/30 to-gray-50 ${
@@ -877,7 +878,7 @@ const ItemLibrary = () => {
                         field: "description",
                         sortable: false,
                       },
-                      { label: "Barcode", field: "barcode", sortable: false },
+                      { label: "Outlet", field: "outlet", sortable: false },
                       {
                         label: "Qty",
                         field: "quantity",
@@ -981,7 +982,7 @@ const ItemLibrary = () => {
                           {item.description}
                         </td>
                         <td className="px-4 py-3 text-sm font-mono text-gray-600">
-                          {item.barcodeItem}
+                          {item.outlet?.namaOutlet || "tidak terhubung"}
                         </td>
                         <td className="px-4 py-3 text-center">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">

@@ -9,6 +9,8 @@ import Inventory from "../models/InventoryRefrensi.model.js";
 import PaymentMethod from "../models/PaymentMethod.model.js";
 import SystemConfig from "../models/SystemConfig.model.js";
 import SpgRefrensi from "../models/SpgRefrensi.model.js";
+import Soap from "../models/Soap.model.js";
+import { createDefaultSoapSeed } from "../utils/soapNav/templates.js";
 
 const SUPERADMIN_USERNAME = "superadmin";
 const SUPERADMIN_PASSWORD = process.env.SEED_SUPERADMIN_PASSWORD;
@@ -70,7 +72,7 @@ const seedBrands = async () => {
     );
     brands[name] = brand;
   }
-
+  
   return brands;
 };
 
@@ -107,7 +109,7 @@ const seedSuperadmin = async () => {
   if (existingUser) {
     const updates = {
       roleName: "SUPER ADMIN",
-      blockedAccess: [],
+      blockedAccess: [],  
       isDisabled: false,
     };
 
@@ -178,15 +180,10 @@ const seedSpg = async () => {
   let registered = [];
   for (const s of spgs) {
     const registerd = await SpgRefrensi.findOneAndUpdate(
-      {
-        name: s.name,
-      },
-      {
-        upsert: true,
-        new: true,
-        setDefaultsOnInsert: true,
-      },
-    ).
+      { name: s.name },
+      { $setOnInsert: { name: s.name } },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
     registered.push(registerd);
   }
   return registered;
@@ -197,14 +194,39 @@ const seedPaymentMethods = async () => {
     { method: "Tunai", discount: 0, additional_fee: 0, status: true },
     { method: "Transfer", discount: 0, additional_fee: 0, status: true },
     { method: "QRIS", discount: 0, additional_fee: 0, status: true },
+    {
+      method: "Midtrans",
+      discount: 0,
+      additional_fee: 0,
+      status: true,
+      gatewayProvider: "midtrans",
+      isSystem: true,
+      systemKey: "midtrans_default",
+    },
   ];
   
   for (const paymentMethod of paymentMethods) {
-    await PaymentMethod.findOneAndUpdate(
-      { method: paymentMethod.method },
-      { $setOnInsert: paymentMethod },
-      { new: true, upsert: true, setDefaultsOnInsert: true },
-    );
+    const filter = { method: paymentMethod.method };
+    const options = { new: true, upsert: true, setDefaultsOnInsert: true };
+
+    if (paymentMethod.gatewayProvider) {
+      const { gatewayProvider, isSystem, systemKey, ...baseFields } =
+        paymentMethod;
+      await PaymentMethod.findOneAndUpdate(
+        filter,
+        {
+          $setOnInsert: baseFields,
+          $set: { gatewayProvider, isSystem, systemKey },
+        },
+        options,
+      );
+    } else {
+      await PaymentMethod.findOneAndUpdate(
+        filter,
+        { $setOnInsert: paymentMethod },
+        options,
+      );
+    }
   }
 };
 
@@ -224,6 +246,10 @@ const seedSystemConfigFromEnv = async () => {
   if (process.env.EMAIL_SERVICE) {
     config.EMAIL_SERVICE = process.env.EMAIL_SERVICE;
   }
+  if (process.env.AD_HOST) config.AD_HOST = process.env.AD_HOST;
+  if (process.env.AD_PORT) config.AD_PORT = Number(process.env.AD_PORT);
+  if (process.env.AD_DOMAIN) config.AD_DOMAIN = process.env.AD_DOMAIN;
+  if (process.env.AD_BASE_DN) config.AD_BASE_DN = process.env.AD_BASE_DN;
   if (process.env.PASS_DOWNLOAD_APK) {
     config.PASS_DOWNLOAD_APK = process.env.PASS_DOWNLOAD_APK;
   }
@@ -233,6 +259,31 @@ const seedSystemConfigFromEnv = async () => {
   return SystemConfig.findOneAndUpdate(
     { _id: "global" },
     { $setOnInsert: config },
+    { new: true, upsert: true, setDefaultsOnInsert: true },
+  );
+};
+
+const seedSoapNav = async (outlet) => {
+  const endpoint = process.env.NAV_SOAP_ENDPOINT;
+  const usernameNTLM = process.env.SOAP_USERNAME_NTLM_SEED;
+  const passwordNTLM = process.env.SOAP_PASSWORD_NTLM_SEED;
+
+  if (!endpoint || !usernameNTLM || !passwordNTLM ) {
+    return null;
+  }
+
+  const soapSeed = createDefaultSoapSeed({
+    endpoint,
+    usernameNTLM,
+    passwordNTLM,
+    noSeries: "SO-RTL",
+  });
+  
+  return Soap.findOneAndUpdate(
+    { outlet: outlet._id },
+    {
+      $set: { outlet: outlet._id, ...soapSeed },
+    },
     { new: true, upsert: true, setDefaultsOnInsert: true },
   );
 };
@@ -256,6 +307,7 @@ const seed = async () => {
   }
 
   const systemConfig = await seedSystemConfigFromEnv();
+  const soapConfig = await seedSoapNav(outlet);
 
   console.log("Seed berhasil dijalankan.");
   console.log(`- Superadmin: ${superadmin.username}`);
@@ -264,6 +316,9 @@ const seed = async () => {
   console.log("- Metode pembayaran: Tunai, Transfer, QRIS");
   console.log(
     `- Konfigurasi sistem dari .env: ${systemConfig ? "disimpan" : "dilewati"}`,
+  );
+  console.log(
+    `- Konfigurasi SOAP NAV dari .env: ${soapConfig ? "disimpan" : "dilewati"}`,
   );
 
   if (RESET_SUPERADMIN_PASSWORD) {

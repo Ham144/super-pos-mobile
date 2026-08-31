@@ -38,6 +38,7 @@
     "expo-router": "~4.0.11",
     "expo-splash-screen": "~0.29.13",
     "expo-status-bar": "~2.0.0",
+    "expo-updates": "~0.27.5",
     "lucide-react-native": "^0.473.0",
     "metro": "0.81.0",
     "metro-config": "0.81.0",
@@ -58,9 +59,9 @@
     "react-native-tcp-socket": "^6.2.0",
     "react-native-vector-icons": "^10.2.0",
     "react-native-web": "~0.19.10",
+    "react-native-webview": "^14.0.1",
     "tailwindcss": "^3.4.0",
-    "zustand": "^5.0.3",
-    "expo-updates": "~0.27.5"
+    "zustand": "^5.0.3"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",

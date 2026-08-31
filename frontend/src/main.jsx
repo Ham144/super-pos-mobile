@@ -18,12 +18,14 @@ import NotFound from "./pages/not-found.jsx";
 import Outlet from "./pages/Outlet.jsx";
 // import KasirList from "./pages/KasirList.jsx";
 import AllAccounts from "./pages/AllAccounts.jsx";
+import SpgReference from "./pages/SpgReference.jsx";
 import PurchaseOrderReceive from "./pages/PurchaseOrderReceive.jsx";
 import PurchaseOrdersCreate from "./pages/PurchaseOrderCreate.jsx";
 import LevelWrapper from "./components/LevelWrapper";
 import BrandList from "./pages/BrandList";
 import ReportList from "./pages/ReportList";
 import PaymentMethod from "./pages/PaymentMethod";
+import Printer from "./pages/Printer";
 import Invoices from "./pages/Invoices";
 import SumberThirdParty from "./pages/SumberThirdParty";
 import SaleReport from "./pages/SalesReport";
@@ -70,6 +72,9 @@ const router = createBrowserRouter(
         <Route path="/brands" element={<BrandList />} />
         <Route path="/report_list" element={<ReportList />} />
         <Route path="/payment_method" element={<PaymentMethod />} />
+        <Route path="/printer_config" element={<Printer />} />
+        <Route path="/spg_reference" element={<SpgReference />} />
+        <Route path="/spg_list" element={<SpgReference />} />
         <Route path="/invoices" element={<Invoices />} />
         <Route path="/sumber_thirdparty" element={<SumberThirdParty />} />
         <Route path="/sales_report" element={<SaleReport />} />

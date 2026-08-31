@@ -10,7 +10,7 @@ const getServerKey = () => {
 };
 
 const getClientConfig = () => ({
-  isProduction: process.env.PAYMENT_MIDTRANS_IS_PRODUCTION === "true",
+  isProduction: process.env.NODE_ENV === "production",
   serverKey: getServerKey(),
   clientKey: process.env.PAYMENT_MIDTRANS_CLIENT_KEY || "unused-by-server",
 });
