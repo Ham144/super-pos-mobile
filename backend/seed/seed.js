@@ -72,7 +72,7 @@ const seedBrands = async () => {
     );
     brands[name] = brand;
   }
-  
+
   return brands;
 };
 
@@ -109,7 +109,7 @@ const seedSuperadmin = async () => {
   if (existingUser) {
     const updates = {
       roleName: "SUPER ADMIN",
-      blockedAccess: [],  
+      blockedAccess: [],
       isDisabled: false,
     };
 
@@ -155,13 +155,14 @@ const seedOutlet = async (brands, superadmin) => {
     {
       $setOnInsert: {
         kodeOutlet: "01",
-        namaOutlet: "Outlet Default",
-        description: "Outlet default hasil seed POS",
-        namaPerusahaan: "CSI",
+        namaOutlet: "Demo Offline Outlet",
+        description: "Outlet default boleh dihapus",
+        namaPerusahaan: "PT Outlet Demo",
         periodeSettlement: 1,
         jamSettlement: "00:00",
         jumlahInvoice: 0,
         pendapatan: 0,
+        mode: "offline",
       },
       $addToSet: {
         kasirList: superadmin._id,
@@ -204,7 +205,7 @@ const seedPaymentMethods = async () => {
       systemKey: "midtrans_default",
     },
   ];
-  
+
   for (const paymentMethod of paymentMethods) {
     const filter = { method: paymentMethod.method };
     const options = { new: true, upsert: true, setDefaultsOnInsert: true };
@@ -256,9 +257,20 @@ const seedSystemConfigFromEnv = async () => {
 
   if (Object.keys(config).length === 0) return null;
 
+  const adConfig = {};
+  if (config.AD_HOST) adConfig.AD_HOST = config.AD_HOST;
+  if (config.AD_PORT) adConfig.AD_PORT = config.AD_PORT;
+  if (config.AD_DOMAIN) adConfig.AD_DOMAIN = config.AD_DOMAIN;
+  if (config.AD_BASE_DN) adConfig.AD_BASE_DN = config.AD_BASE_DN;
+
+  const { AD_HOST, AD_PORT, AD_DOMAIN, AD_BASE_DN, ...otherConfig } = config;
+
   return SystemConfig.findOneAndUpdate(
     { _id: "global" },
-    { $setOnInsert: config },
+    {
+      $setOnInsert: otherConfig,
+      ...(Object.keys(adConfig).length > 0 ? { $set: adConfig } : {}),
+    },
     { new: true, upsert: true, setDefaultsOnInsert: true },
   );
 };
@@ -268,7 +280,7 @@ const seedSoapNav = async (outlet) => {
   const usernameNTLM = process.env.SOAP_USERNAME_NTLM_SEED;
   const passwordNTLM = process.env.SOAP_PASSWORD_NTLM_SEED;
 
-  if (!endpoint || !usernameNTLM || !passwordNTLM ) {
+  if (!endpoint || !usernameNTLM || !passwordNTLM) {
     return null;
   }
 
@@ -278,7 +290,7 @@ const seedSoapNav = async (outlet) => {
     passwordNTLM,
     noSeries: "SO-RTL",
   });
-  
+
   return Soap.findOneAndUpdate(
     { outlet: outlet._id },
     {

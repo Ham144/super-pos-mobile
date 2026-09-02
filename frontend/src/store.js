@@ -1,7 +1,6 @@
 import { create } from "zustand";
 
 //zustand
-
 export const useFilter = create((set) => ({
   filter: {
     startDate: "",

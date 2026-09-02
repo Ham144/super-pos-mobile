@@ -51,6 +51,11 @@ const userSchema = new mongoose.Schema(
       type: String,
       unique: true,
     }, //3 huruf random dari usernamenya exp: HM1 krn username yafizham
+    currentOutlet: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Outlet",  
+      required: true,
+    },
   },
   { timestamps: true },
 );

@@ -102,24 +102,39 @@ export const registerSingleInventori = async (req, res) => {
 };
 
 //tidak bisa hapus karena kalau dihapus dari database, akan diambil lagi dari pihak ke tiga, disable aja
-export const disableSingleInventoriToggle = async (req, re) => {
+export const disableSingleInventoriToggle = async (req, res) => {
   const { sku } = req.body;
-  if (!sku)
+  if (!sku) {
     return res
       .status(400)
       .json({ message: "tidak berhasil disable, sku diperlukan" });
+  }
 
   try {
-    const success = await InventoryRefrensi.findOneAndUpdate(
-      { sku },
-      { isDisabled: !this.isDisabled },
-      { upsert: false, new: true },
-    );
-    if (!success) return res.status(400).json({ message: "gagal disbale" });
-    return res.json({ message: "berhasil menghapus" });
+    const inventory = await InventoryRefrensi.findOne({ sku });
+    if (!inventory) {
+      return res.status(400).json({ message: "inventory tidak ditemukan" });
+    }
+
+    inventory.isDisabled = !inventory.isDisabled;
+    await inventory.save();
+
+    return res.json({ message: "berhasil mengubah status inventory" });
   } catch (error) {
-    return res.status(400).json({ message: "gagal menghapus" });
+    return res.status(400).json({ message: "gagal mengubah status inventory" });
   }
+};
+
+export const toggleDisableInventory = async (req, res) => {
+  const { id } = req.params;
+  const inventory = await InventoryRefrensi.findOne({ sku: id });
+  if (!inventory) {
+    return res.status(400).json({ message: "inventory tidak ditemukan" });
+  }
+
+  inventory.isDisabled = !inventory.isDisabled;
+  await inventory.save();
+  return res.json({ message: "berhasil mengubah status inventory" });
 };
 
 export const updateSingleInventori = async (req, res) => {

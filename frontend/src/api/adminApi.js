@@ -92,3 +92,19 @@ export const resetSystemConfig = async () => {
     throw error;
   }
 };
+
+export const getAdConfig = async () => {
+  const response = await axios.get(`${BASE_URL}/api/v1/admin/ad-config`, {
+    withCredentials: true,
+  });
+  return response.data;
+};
+
+export const saveAdConfig = async (config) => {
+  const response = await axios.put(
+    `${BASE_URL}/api/v1/admin/ad-config`,
+    config,
+    { withCredentials: true },
+  );
+  return response.data;
+};

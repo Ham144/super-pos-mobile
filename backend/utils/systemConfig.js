@@ -11,6 +11,10 @@ const fallbackEnvConfig = () => ({
   EMAIL_PASS: process.env.EMAIL_PASS || "",
   EMAIL_SERVICE: process.env.EMAIL_SERVICE || "",
   PASS_DOWNLOAD_APK: process.env.PASS_DOWNLOAD_APK || "",
+  AD_HOST: process.env.AD_HOST || "",
+  AD_PORT: Number(process.env.AD_PORT) || 389,
+  AD_DOMAIN: process.env.AD_DOMAIN || "",
+  AD_BASE_DN: process.env.AD_BASE_DN || "",
 });
 
 const toBoolean = (value, fallback = false) => {
@@ -62,7 +66,28 @@ export const getSystemConfigDoc = async () => {
 export const getEffectiveSystemConfig = async () => {
   const fallback = fallbackEnvConfig();
   const doc = await getSystemConfigDoc();
-  return sanitizeConfig(doc || {}, fallback);
+  return {
+    ...sanitizeConfig(doc || {}, fallback),
+    AD_HOST: preferValue(doc?.AD_HOST, fallback.AD_HOST),
+    AD_PORT: toPort(doc?.AD_PORT, fallback.AD_PORT),
+    AD_DOMAIN: preferValue(doc?.AD_DOMAIN, fallback.AD_DOMAIN),
+    AD_BASE_DN: preferValue(doc?.AD_BASE_DN, fallback.AD_BASE_DN),
+  };
+};
+
+export const getActiveDirectoryConfig = async () => {
+  const config = await getEffectiveSystemConfig();
+
+  if (!config.AD_HOST || !config.AD_DOMAIN || !config.AD_BASE_DN) {
+    throw new Error("Konfigurasi Active Directory belum lengkap");
+  }
+
+  return {
+    AD_HOST: config.AD_HOST,
+    AD_PORT: config.AD_PORT || 389,
+    AD_DOMAIN: config.AD_DOMAIN,
+    AD_BASE_DN: config.AD_BASE_DN,
+  };
 };
 
 export const getPublicSystemConfig = async () => {
@@ -109,11 +134,26 @@ export const saveSystemConfig = async (payload = {}) => {
     fallback
   );
 
+  const adFields = {};
+  if (payload.AD_HOST !== undefined) {
+    adFields.AD_HOST = preferValue(payload.AD_HOST, fallback.AD_HOST);
+  }
+  if (payload.AD_PORT !== undefined) {
+    adFields.AD_PORT = toPort(payload.AD_PORT, fallback.AD_PORT);
+  }
+  if (payload.AD_DOMAIN !== undefined) {
+    adFields.AD_DOMAIN = preferValue(payload.AD_DOMAIN, fallback.AD_DOMAIN);
+  }
+  if (payload.AD_BASE_DN !== undefined) {
+    adFields.AD_BASE_DN = preferValue(payload.AD_BASE_DN, fallback.AD_BASE_DN);
+  }
+
   return SystemConfig.findByIdAndUpdate(
     CONFIG_ID,
     {
       _id: CONFIG_ID,
       ...merged,
+      ...adFields,
     },
     {
       new: true,
@@ -121,6 +161,25 @@ export const saveSystemConfig = async (payload = {}) => {
       setDefaultsOnInsert: true,
     }
   ).lean();
+};
+
+export const getPublicAdConfig = async () => {
+  const config = await getEffectiveSystemConfig();
+  return {
+    AD_HOST: config.AD_HOST || "",
+    AD_PORT: config.AD_PORT || 389,
+    AD_DOMAIN: config.AD_DOMAIN || "",
+    AD_BASE_DN: config.AD_BASE_DN || "",
+  };
+};
+
+export const saveAdConfig = async (payload = {}) => {
+  return saveSystemConfig({
+    AD_HOST: payload.AD_HOST,
+    AD_PORT: payload.AD_PORT,
+    AD_DOMAIN: payload.AD_DOMAIN,
+    AD_BASE_DN: payload.AD_BASE_DN,
+  });
 };
 
 export const deleteSystemConfig = async () => {

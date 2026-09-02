@@ -2,6 +2,8 @@ import { Router } from "express";
 import Outlet from "../models/Outlet.model.js";
 import sharp from "sharp";
 import { findInventoryBySku } from "../utils/validatePoSkus.js";
+import UserRefrensi from "../models/User.model.js";
+import generateTokenJWT from "../utils/generateTokenJWT.js";
 
 const router = Router();
 
@@ -36,81 +38,76 @@ const processLogo = async (logoBase64) => {
 };
 
 router.post("/registerOutlet", async (req, res) => {
-  const { namaOutlet, description, logo, usernameNTLM, passwordNTLM, noSeries, sellToCustNo } = req.body;
+  const {
+    kodeOutlet,
+    namaOutlet,
+    description,
+    logo,
+    namaPerusahaan,
+    alamat,
+    npwp,
+    brandIds,
+    periodeSettlement,
+    jamSettlement,
+    mode,
+  } = req.body;
 
-  let kodeOutlet;
-  if (kodeOutletRequest) {
-    if (outletListDB.some((item) => item.kodeOutlet === kodeOutletRequest)) {
-      return res.status(400).json({ message: "kode outlet sudah digunakan" });
-    }
-    kodeOutlet = kodeOutletRequest;
-  } else {
+  if (!kodeOutlet?.trim()) {
     return res.status(400).json({ message: "kode outlet diperlukan" });
   }
-
-  const undefinedsErrors = [];
-  if (!namaOutlet) {
-    undefinedsErrors.push("namaOutlet is required");
-  }
-  if(!kodeOutlet) {
-    undefinedsErrors.push("kodeOutlet is required");
-  }
-  if (undefinedsErrors?.length) {
-    return res.status(400).json({
-      message: `Gagal, required field tidak diisi: [${undefinedsErrors.join(", ")}]`,
-      undefinedsErrors,
-    });
+  if (!namaOutlet?.trim()) {
+    return res.status(400).json({ message: "namaOutlet is required" });
   }
 
   try {
-    const { namaOutlet, periodeSettlement, jamSettlement } = req.body;
-    const outletListDB = await Outlet.find({});
-    const isExisted = outletListDB.some(
-      (item) => item.namaOutlet === namaOutlet,
-    );
+    const normalizedKode = kodeOutlet.trim();
+    const isExisted = await Outlet.exists({
+      $or: [{ kodeOutlet: normalizedKode }, { namaOutlet: namaOutlet.trim() }],
+    });
     if (isExisted) {
-      return res.status(500).json({ message: "outlet sudah ada" });
+      return res
+        .status(400)
+        .json({ message: "kode outlet atau nama outlet sudah digunakan" });
     }
 
-    // Process logo if exists
     const processedLogo = await processLogo(logo);
-
-    // Check if any of the users are already assigned to other outlets
-    const usersInOtherOutlets = [];
-
-    if (usersInOtherOutlets.length > 0) {
-      return res.status(400).json({
-        message:
-          "Beberapa kasir sudah terdaftar di outlet lain. Satu kasir hanya dapat ditugaskan ke satu outlet.",
-        usersInOtherOutlets,
-      });
-    }
-
-    // Create the new outlet with processed logo
-    await Outlet.create({
-      kodeOutlet: newKey?.toString()?.padStart(2, "0"),
-      namaOutlet: namaOutlet,
-      description: description,
+    const outlet = await Outlet.create({
+      kodeOutlet: normalizedKode,
+      namaOutlet: namaOutlet.trim(),
+      description: description || "",
       logo: processedLogo,
-      namaPerusahaan: req?.body?.namaPerusahaan,
-      alamat: req?.body?.alamat,
-      npwp: req?.body?.npwp,
-      brandIds: req?.body?.brandIds,
+      namaPerusahaan,
+      alamat,
+      npwp,
+      brandIds: brandIds || [],
       periodeSettlement: periodeSettlement || 1,
       jamSettlement: jamSettlement || "00:00",
+      mode: mode || undefined,
     });
 
-    return res.json({ message: "berhasil" });
+    return res.json({ message: "berhasil", data: outlet });
   } catch (error) {
     console.log(error);
     return res.status(400).json({ message: "gagal register outlet" });
   }
 });
 
+//detail outlet list
 router.get("/getAllOutlet", async (req, res) => {
   try {
     const data = await Outlet.find({});
     return res.json({ data });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({ message: "gagal mendapatkan outlet list" });
+  }
+});
+
+//simple outlet list
+router.get("/simple-outlet-list", async (req, res) => {
+  try {
+    const data = await Outlet.find({}).select("kodeOutlet namaOutlet");
+    return res.json({ message: "berhasil", data });
   } catch (error) {
     console.log(error);
     return res.status(500).json({ message: "gagal mendapatkan outlet list" });
@@ -175,8 +172,10 @@ router.put("/edit", async (req, res) => {
         namaPerusahaan: req?.body?.namaPerusahaan,
         alamat: req?.body?.alamat,
         npwp: req?.body?.npwp,
+        brandIds: req?.body?.brandIds,
         periodeSettlement: req?.body?.periodeSettlement,
         jamSettlement: req?.body?.jamSettlement,
+        mode: req?.body?.mode || null,
       },
     });
 
@@ -412,6 +411,35 @@ router.get("/favoritedInventorySkus/:outletId", async (req, res) => {
       error: error.message,
     });
   }
+});
+
+router.get("/switch-outlet/:outletId", async (req, res) => {
+  const { outletId } = req.params;
+  const outlet = await Outlet.findById(outletId);
+  if (!outlet) {
+    return res.status(404).json({ message: "Outlet tidak ditemukan" });
+  }
+
+  await UserRefrensi.findByIdAndUpdate(req.userId, {
+    $set: {
+      currentOutlet: outletId,
+    },
+  });
+
+  const token = await generateTokenJWT(req.userId);
+  if (!token) {
+    return res
+      .status(400)
+      .json({ message: "Terjadi kesalahan sementara, coba lagi" });
+  }
+  return res.json({
+    message: "berhasil switch outlet",
+    currentOutlet: {
+      _id: outlet._id,
+      kodeOutlet: outlet.kodeOutlet,
+      namaOutlet: outlet.namaOutlet,
+    },
+  });
 });
 
 export default router;

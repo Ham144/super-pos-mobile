@@ -51,10 +51,53 @@ export default function ModalRegisterOutlet({
                   Simpan
                 </button>
               </div>
+              <span className="text-sm text-gray-500 px-2">
+                Konfigurasi lebih lanjut dapat dilakukan dengan mengedit outlet
+              </span>
             </div>
 
             {/* Form Fields */}
             <div className="space-y-4">
+              {/* Kode Outlet (NAV Location) */}
+              <div>
+                <label className="block font-semibold text-gray-700">
+                  Kode Outlet (NAV Location)
+                </label>
+                <input
+                  type="text"
+                  className="w-full border px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary uppercase"
+                  value={newOutletForm?.kodeOutlet || ""}
+                  onChange={(e) =>
+                    setNewOutletForm({
+                      ...newOutletForm,
+                      kodeOutlet: e.target.value.toUpperCase(),
+                    })
+                  }
+                  placeholder="Contoh: SRNG_JUAL"
+                />
+              </div>
+
+              {/* Mode Operasi */}
+              <div>
+                <label className="block font-semibold text-gray-700">
+                  Mode Operasi Mobile
+                </label>
+                <select
+                  className="w-full border px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-white"
+                  value={newOutletForm?.mode || ""}
+                  onChange={(e) =>
+                    setNewOutletForm({
+                      ...newOutletForm,
+                      mode: e.target.value,
+                    })
+                  }
+                >
+                  <option value="">— Pilih mode —</option>
+                  <option value="offline">Offline</option>
+                  <option value="stateless">Stateless (NAV real-time)</option>
+                </select>
+              </div>
+
               {/* Nama Outlet */}
               <div>
                 <label className="block font-semibold text-gray-700">
@@ -186,14 +229,16 @@ export default function ModalRegisterOutlet({
               </div>
 
               {/* Brand Terpilih */}
-              <div className="form-control w-full">
+              {
+                newOutletForm?.mode === "offline" && (
+                  <div className="form-control w-full">
                 <label className="label">
                   <span className="label-text">Brand</span>
                 </label>
                 <div className="flex flex-wrap gap-2 min-h-[2.5rem] p-2 border rounded-lg">
                   {brandList?.data?.data
                     ?.filter((brand) =>
-                      newOutletForm?.brandIds?.includes(brand._id)
+                      newOutletForm?.brandIds?.includes(brand._id),
                     )
                     .map((brand) => (
                       <div
@@ -209,7 +254,7 @@ export default function ModalRegisterOutlet({
                             setNewOutletForm((prev) => ({
                               ...prev,
                               brandIds: prev.brandIds.filter(
-                                (id) => id !== brand._id
+                                (id) => id !== brand._id,
                               ),
                             }));
                           }}
@@ -231,6 +276,8 @@ export default function ModalRegisterOutlet({
                   </button>
                 </div>
               </div>
+                )
+              }
 
               <label
                 htmlFor="kasir"

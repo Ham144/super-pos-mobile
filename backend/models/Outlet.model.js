@@ -3,7 +3,8 @@ import mongoose from "mongoose";
 //Outlet == pameran
 //single
 const outletSchema = mongoose.Schema({
-  kodeOutlet: { //SRNG_JUAL, MG2_JUAL
+  kodeOutlet: {
+    //SRNG_JUAL, MG2_JUAL
     type: String,
     required: true,
     unique: true,
@@ -37,7 +38,7 @@ const outletSchema = mongoose.Schema({
   },
   jamSettlement: {
     type: String,
-    default: "00:00", 
+    default: "00:00",
   },
   // daftar SKU yang menampilkan gambar di mobile (bukan wajib punya thumbnail)
   favoritedInventoryIds: [String],
@@ -51,13 +52,17 @@ const outletSchema = mongoose.Schema({
     default: [],
   },
   printerList: {
-    type: [
-      {type: mongoose.Schema.Types.ObjectId,
-      ref: "Printer"}
-    ]
+    type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Printer" }],
   },
   mode: {
-    enum: ["stateless", 'offline']
+    type: String,
+    enum: ["stateless", "offline"],
+    required: true,
+  },
+  ExternalProductReference: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "ExternalProductReference",
+    default: null,
   },
 });
 

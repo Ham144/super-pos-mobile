@@ -8,6 +8,13 @@ export const getOuletList = async () => {
   return response?.data;
 };
 
+export const getSimpleOuletList = async () => {
+  const response = await axios.get(`${BASE_URL}/api/v1/outlet/simple-outlet-list`, {
+    withCredentials: true,
+  });
+  return response?.data;
+};
+
 export const registerOutlet = async (body) => {
   const response = await axios.post(
     `${BASE_URL}/api/v1/outlet/registerOutlet`,
@@ -20,15 +27,10 @@ export const registerOutlet = async (body) => {
 };
 
 export const editOutlet = async (body) => {
-  const { namaOutlet, description } = body;
-  if (!namaOutlet || !description) {
-    throw new Error("field tidak lengkap, [namaOutlet, description]");
-  } else {
-    const response = await axios.put(`${BASE_URL}/api/v1/outlet/edit`, body, {
-      withCredentials: true,
-    });
-    return response?.data;
-  }
+  const response = await axios.put(`${BASE_URL}/api/v1/outlet/edit`, body, {
+    withCredentials: true,
+  });
+  return response?.data;
 };
 
 export const deleteOutlet = async (_id) => {
@@ -105,6 +107,14 @@ export const assignFavoritedInventoryToOutlet = async (skus, outletId) => {
 export const getFavoritedInventorySkus = async (outletId) => {
   const response = await axios.get(
     `${BASE_URL}/api/v1/outlet/favoritedInventorySkus/${outletId}`,
+    { withCredentials: true },
+  );
+  return response.data;
+};
+
+export const switchCurrentOutlet = async (outletId) => {
+  const response = await axios.get(
+    `${BASE_URL}/api/v1/outlet/switch-outlet/${outletId}`,
     { withCredentials: true },
   );
   return response.data;

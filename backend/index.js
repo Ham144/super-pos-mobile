@@ -1,7 +1,7 @@
 import express from "express";
 import "dotenv/config";
 import inventoryRoutes from "./routes/inventory-route.js";
-import unlistedLibrarySourceRoute from "./routes/unlistedLibrary.route.js";
+import externalProductReferenceRoute from "./routes/externalProductReference.route.js";
 import { connectDB } from "./utils/connectDB.js";
 import diskonRoutes from "./routes/diskon.route.js";
 import cors from "cors";
@@ -73,7 +73,7 @@ app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
 app.get("/", async (req, res) => {
-  return res.send(process.env.APP_NAME +  " BACKEND : 200");
+  return res.send(process.env.APP_NAME + " BACKEND : 200");
 });
 
 //database
@@ -102,7 +102,7 @@ app.use(authenticate);
 app.use(authorize);
 //routes
 app.use("/api/v1/inventories", inventoryRoutes);
-app.use("/api/v1/unlistedLibraries", unlistedLibrarySourceRoute);
+app.use("/api/v1/external-product-reference", externalProductReferenceRoute);
 app.use("/api/v1/diskon", diskonRoutes);
 app.use("/api/v1/promo", promoRoutes);
 app.use("/api/v1/brand", brandRoutes);
@@ -131,19 +131,19 @@ app.listen(port, host, () => {
   console.log(`Server Berjalan di ${host}:${port}`);
 
   // Inisialisasi cron job pengiriman voucher code setelah server berjalan
-  (async () => {
-    try {
-      await initPengirimanVoucherCodeJob();
-      console.log(
-        "✅ Cron job pengiriman voucher code berhasil diinisialisasi",
-      );
-    } catch (error) {
-      console.error(
-        "❌ Gagal menginisialisasi cron job pengiriman voucher code:",
-        error,
-      );
-    }
-  })();
+  // (async () => {
+  //   try {
+  //     await initPengirimanVoucherCodeJob();
+  //     console.log(
+  //       "✅ Cron job pengiriman voucher code berhasil diinisialisasi",
+  //     );
+  //   } catch (error) {
+  //     console.error(
+  //       "❌ Gagal menginisialisasi cron job pengiriman voucher code:",
+  //       error,
+  //     );
+  //   }
+  // })();
 });
 
 // Fungsi untuk inisialisasi cron job pengiriman voucher code

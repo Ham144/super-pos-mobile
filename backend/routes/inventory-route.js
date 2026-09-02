@@ -3,6 +3,7 @@ import multer from "multer";
 import fs from "fs";
 import {
   disableSingleInventoriToggle,
+  toggleDisableInventory,
   getAllinventories,
   registerSingleInventori,
   updateBulkPrices,
@@ -29,6 +30,7 @@ const upload = multer({
 //manual
 router.post("/registerSingleInventori", registerSingleInventori);
 router.delete("/disableSingleInventoriToggle", disableSingleInventoriToggle);
+router.post("/toggleDisableInventory/:id", toggleDisableInventory);
 router.put("/updateSingleInventori", updateSingleInventori);
 
 router.get("/getAllinventories", getAllinventories);

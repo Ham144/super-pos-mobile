@@ -5,7 +5,9 @@ import nodemailer from "nodemailer";
 import {
   createCurrentSmtpTransporter,
   deleteSystemConfig,
+  getPublicAdConfig,
   getPublicSystemConfig,
+  saveAdConfig,
   saveSystemConfig,
 } from "../utils/systemConfig.js";
 
@@ -351,6 +353,56 @@ router.delete("/system-config", async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Terjadi kesalahan saat menghapus konfigurasi sistem",
+      error: error.message,
+    });
+  }
+});
+
+router.get("/ad-config", async (req, res) => {
+  try {
+    const config = await getPublicAdConfig();
+    return res.status(200).json({ success: true, config });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Gagal mengambil konfigurasi Active Directory",
+      error: error.message,
+    });
+  }
+});
+
+router.put("/ad-config", async (req, res) => {
+  const { AD_HOST, AD_PORT, AD_DOMAIN, AD_BASE_DN } = req.body;
+
+  if (!AD_HOST || !AD_DOMAIN || !AD_BASE_DN) {
+    return res.status(400).json({
+      success: false,
+      message: "AD_HOST, AD_DOMAIN, dan AD_BASE_DN wajib diisi",
+    });
+  }
+
+  try {
+    const savedConfig = await saveAdConfig({
+      AD_HOST,
+      AD_PORT,
+      AD_DOMAIN,
+      AD_BASE_DN,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Konfigurasi Active Directory berhasil disimpan",
+      config: {
+        AD_HOST: savedConfig.AD_HOST,
+        AD_PORT: savedConfig.AD_PORT,
+        AD_DOMAIN: savedConfig.AD_DOMAIN,
+        AD_BASE_DN: savedConfig.AD_BASE_DN,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Gagal menyimpan konfigurasi Active Directory",
       error: error.message,
     });
   }

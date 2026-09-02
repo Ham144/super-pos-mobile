@@ -3,13 +3,11 @@ import React, { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router";
 import {
   ArrowRight,
-  LayoutDashboard,
   Lock,
   LogOut,
   FileText,
   AlertCircle,
   Info,
-  LogIn,
   BarChart3,
   Package,
   Users,
@@ -28,16 +26,24 @@ import {
   UserCircle,
   Mail,
 } from "lucide-react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { logout } from "@/api/authApi";
+import { getSimpleOuletList, switchCurrentOutlet } from "@/api/outletApi";
 import toast from "react-hot-toast";
 import { renderIcon } from "@/lib/utils";
 import { APP_NAME } from "@/api/constant";
 
 const LG_BREAKPOINT = 1300;
 
+const getCurrentOutletId = (currentOutlet) => {
+  if (!currentOutlet) return "";
+  return typeof currentOutlet === "object"
+    ? currentOutlet._id?.toString()
+    : currentOutlet.toString();
+};
+
 const SideDrawer = ({ children }) => {
-  const { userInfo, clearUserInfo } = useUserInfo();
+  const { userInfo, setUserInfo, clearUserInfo } = useUserInfo();
   const [activeMenu, setActiveMenu] = useState();
   const [nosidebar, setNosidebar] = useState(false);
   const navigate = useNavigate();
@@ -46,6 +52,43 @@ const SideDrawer = ({ children }) => {
   const [isShowSidebar, setIsShowSidebar] = useState(
     () => typeof window !== "undefined" && window.innerWidth >= LG_BREAKPOINT,
   );
+
+  const { data: outletList } = useQuery({
+    queryKey: ["simpleOutletList"],
+    queryFn: getSimpleOuletList,
+    enabled: !!userInfo,
+  });
+
+  const outlets = outletList?.data ?? [];
+  const currentOutletId = getCurrentOutletId(userInfo?.currentOutlet);
+  const currentOutletName =
+    outlets.find((o) => o._id === currentOutletId)?.namaOutlet ||
+    userInfo?.currentOutlet?.namaOutlet ||
+    "";
+
+  const { mutate: handleSwitchCurrentOutlet } = useMutation({
+    mutationKey: ["switchCurrentOutlet"],
+    mutationFn: switchCurrentOutlet,
+    onSuccess: (data, outletId) => {
+      const prev = useUserInfo.getState().userInfo;
+      if (prev) {
+        const selected =
+          data?.currentOutlet ||
+          outlets.find((o) => o._id === outletId) ||
+          outletId;
+        setUserInfo({
+          ...prev,
+          currentOutlet: selected,
+        });
+      }
+      toast.success("Berhasil switch outlet");
+      queryClient.invalidateQueries({ queryKey: ["userInfo"] });
+      queryClient.invalidateQueries();
+    },
+    onError: (error) => {
+      toast.error(error?.response?.data?.message || "Failed to switch outlet");
+    },
+  });
 
   const { mutate: handleLogout } = useMutation({
     mutationKey: ["userInfo"],
@@ -206,6 +249,52 @@ const SideDrawer = ({ children }) => {
           </div>
         </div>
 
+        {userInfo && outlets.length > 0 && (
+          <div
+            className={`border-b border-blue-800/40 bg-blue-950/30 ${
+              isShowSidebar ? "px-3 py-2" : "px-2 py-2 flex justify-center"
+            }`}
+          >
+            {isShowSidebar ? (
+              <label className="flex items-center gap-2 min-w-0">
+                <Store size={14} className="shrink-0 text-blue-200" />
+                <select
+                  value={currentOutletId}
+                  onChange={(e) => handleSwitchCurrentOutlet(e.target.value)}
+                  aria-label="Pilih outlet"
+                  className="flex-1 min-w-0 bg-blue-900/60 text-white text-xs rounded-lg px-2 py-1.5 border border-blue-600/30 focus:outline-none focus:border-blue-300 truncate cursor-pointer"
+                >
+                  {outlets.map((outlet) => (
+                    <option key={outlet._id} value={outlet._id}>
+                      {outlet.namaOutlet}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <div className="relative w-10 h-8 flex items-center justify-center">
+                <Store
+                  size={18}
+                  className="text-blue-200 pointer-events-none"
+                />
+                <select
+                  value={currentOutletId}
+                  onChange={(e) => handleSwitchCurrentOutlet(e.target.value)}
+                  aria-label="Pilih outlet"
+                  title={currentOutletName}
+                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                >
+                  {outlets.map((outlet) => (
+                    <option key={outlet._id} value={outlet._id}>
+                      {outlet.namaOutlet}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex-1 overflow-y-auto overflow-hidden p-2">
           <div className="flex items-center justify-center w-full p-1">
             <div
@@ -241,7 +330,7 @@ const SideDrawer = ({ children }) => {
                       </span>
                     </div>
                   </div>
-                  
+
                   {/* User Info (Only visible when sidebar is open) */}
                   {isShowSidebar && (
                     <div className="flex flex-col min-w-0 flex-1 overflow-hidden">
@@ -270,29 +359,27 @@ const SideDrawer = ({ children }) => {
                     </div>
                   )}
                 </div>
-              ) : 
-               <div className="flex items-center gap-2 shrink-0 justify-between w-full ">
-                {isShowSidebar && (
-                  <span className="font-medium text-xs text-white/80 hidden xl:block">
-                    Dashboard
-                  </span>
-                )}
-                <button
-                  onClick={() => navigate("/dashboard")}
-                  type="button"
-                  aria-label="Buka Dashboard"
-                  className="p-3 "
-                  title="Dashboard"
-                >
-                  <ArrowRight color="white" size={15} aria-hidden="true" />
-                </button>
-              </div> 
-              }
+              ) : (
+                <div className="flex items-center gap-2 shrink-0 justify-between w-full ">
+                  {isShowSidebar && (
+                    <span className="font-medium text-xs text-white/80 hidden xl:block">
+                      Dashboard
+                    </span>
+                  )}
+                  <button
+                    onClick={() => navigate("/dashboard")}
+                    type="button"
+                    aria-label="Buka Dashboard"
+                    className="p-3 "
+                    title="Dashboard"
+                  >
+                    <ArrowRight color="white" size={15} aria-hidden="true" />
+                  </button>
+                </div>
+              )}
 
               {/* Arrow Action Button */}
-           
             </div>
-           
           </div>
           {menuItems.map((group, idx) => (
             <div key={idx} className="mt-3">

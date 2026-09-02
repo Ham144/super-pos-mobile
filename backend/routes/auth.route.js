@@ -6,7 +6,7 @@ import UserRefrensi from "../models/User.model.js";
 import Outlet from "../models/Outlet.model.js";
 import bcrypt from "bcryptjs";
 import authorize from "../middlewares/authorize.js";
-import SystemConfig from "../models/SystemConfig.model.js";
+import { getActiveDirectoryConfig } from "../utils/systemConfig.js";
 
 const router = Router();
 
@@ -99,6 +99,133 @@ const generateUniqueKodeKasir = async (username) => {
   return kodeKasir;
 };
 
+const getDomainFqdn = (baseDn) =>
+  String(baseDn || "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.toUpperCase().startsWith("DC="))
+    .map((part) => part.slice(3))
+    .join(".");
+
+const buildLdapUrl = (adConfig) => {
+  const useSsl =
+    Number(adConfig.AD_PORT) === 636 || process.env.AD_USE_SSL === "true";
+  const protocol = useSsl ? "ldaps" : "ldap";
+  return `${protocol}://${adConfig.AD_HOST}:${adConfig.AD_PORT}`;
+};
+
+const buildBindCandidates = (username, adConfig) => {
+  const candidates = [`${adConfig.AD_DOMAIN}\\${username}`];
+  const fqdn =
+    process.env.AD_UPN_SUFFIX?.trim() || getDomainFqdn(adConfig.AD_BASE_DN);
+
+  if (fqdn) {
+    candidates.push(`${username}@${fqdn}`);
+  }
+
+  return [...new Set(candidates)];
+};
+
+const isLdapReferralError = (error) =>
+  error?.name === "ReferralError" || error?.code === 10;
+
+const isInvalidCredentialsError = (error) =>
+  error?.name === "InvalidCredentialsError" || error?.code === 49;
+
+const tryLdapBind = async (client, candidates, password) => {
+  let lastError;
+
+  for (const bindDn of candidates) {
+    try {
+      await client.bind(bindDn, password);
+      return bindDn;
+    } catch (error) {
+      lastError = error;
+      if (isInvalidCredentialsError(error) || isLdapReferralError(error)) {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw lastError || new Error("InvalidCredentialsError");
+};
+
+const searchLdapUser = async (client, username, baseDN) =>
+  client.search(baseDN, {
+    scope: "sub",
+    filter: `(sAMAccountName=${escapeLdapFilter(username)})`,
+    attributes: [
+      "physicalDeliveryOfficeName",
+      "displayName",
+      "mail",
+      "telephoneNumber",
+      "sAMAccountName",
+    ],
+  });
+
+const mapLdapAuthError = (error) => {
+  if (isInvalidCredentialsError(error)) {
+    const ldapError = new Error("Username atau password LDAP salah.");
+    ldapError.statusCode = 400;
+    ldapError.details = error?.name || "InvalidCredentialsError";
+    return ldapError;
+  }
+
+  if (isLdapReferralError(error)) {
+    const ldapError = new Error(
+      "LDAP ReferralError: server AD mengarahkan ke DC lain. Pastikan AD_HOST menunjuk langsung ke Domain Controller.",
+    );
+    ldapError.statusCode = 400;
+    ldapError.details = error?.name || "ReferralError";
+    return ldapError;
+  }
+
+  const ldapError = new Error(
+    "Gagal menghubungkan kredensial user ke LDAP, mungkin kesalahan username/password atau konfigurasi AD.",
+  );
+  ldapError.statusCode = 400;
+  ldapError.details = error?.message || error?.name || String(error);
+  return ldapError;
+};
+
+const escapeLdapFilter = (value = "") =>
+  String(value).replace(/[\*\(\)\\0]/g, (char) => {
+    switch (char) {
+      case "\0":
+        return "\\00";
+      case "(":
+        return "\\28";
+      case ")":
+        return "\\29";
+      case "*":
+        return "\\2a";
+      case "\\":
+        return "\\5c";
+      default:
+        return char;
+    }
+  });
+
+const getLdapAttribute = (entry, attributeName) => {
+  if (!entry) return null;
+
+  if (entry[attributeName] !== undefined) {
+    return entry[attributeName];
+  }
+
+  if (entry.attributes?.[attributeName] !== undefined) {
+    return entry.attributes[attributeName];
+  }
+
+  const rawValue = entry.raw?.[attributeName];
+  if (Array.isArray(rawValue)) {
+    return rawValue[0]?.toString?.() ?? rawValue[0] ?? null;
+  }
+
+  return rawValue?.toString?.() ?? rawValue ?? null;
+};
+
 const authenticateLdapCredentials = async (usernameRaw, password) => {
   if (!usernameRaw || !password) {
     const error = new Error("perlu username dan password");
@@ -106,14 +233,12 @@ const authenticateLdapCredentials = async (usernameRaw, password) => {
     throw error;
   }
 
-  const username = usernameRaw.toLowerCase().trim();
-  const systemConfig = await SystemConfig.findById("global").lean();
-  if (
-    !systemConfig?.AD_HOST ||
-    !systemConfig?.AD_DOMAIN ||
-    !systemConfig?.AD_BASE_DN
-  ) {
-    const error = new Error("Konfigurasi Active Directory belum lengkap");
+  const username = String(usernameRaw).trim();
+  let adConfig;
+
+  try {
+    adConfig = await getActiveDirectoryConfig();
+  } catch (error) {
     error.statusCode = 500;
     throw error;
   }
@@ -121,40 +246,44 @@ const authenticateLdapCredentials = async (usernameRaw, password) => {
   let client;
   try {
     client = new LdapClient({
-      url: `ldap://${systemConfig.AD_HOST}:${systemConfig.AD_PORT || 389}`,
+      url: buildLdapUrl(adConfig),
+      timeout: 15000,
     });
 
-    const bindDn = `${systemConfig.AD_DOMAIN}\\${username}`;
-    const baseDN = systemConfig.AD_BASE_DN;
+    const bindCandidates = buildBindCandidates(username, adConfig);
+    const bindDn = await tryLdapBind(client, bindCandidates, password);
 
-    await client.bind(bindDn, password);
+    try {
+      const result = await searchLdapUser(
+        client,
+        username,
+        adConfig.AD_BASE_DN,
+      );
+      const userLDAP = result?.[0];
 
-    const result = await client.search(baseDN, {
-      scope: "sub",
-      filter: `(sAMAccountName=${username})`,
-      attributes: [
-        "physicalDeliveryOfficeName",
-        "displayName",
-        "mail",
-        "telephoneNumber",
-      ],
-    });
-
-    if (!result || result.length === 0) {
-      const error = new Error("Tidak ditemukan username user di AD.");
-      error.statusCode = 400;
-      throw error;
+      if (userLDAP) {
+        const resolvedUsername =
+          getLdapAttribute(userLDAP, "sAMAccountName") || username;
+        return String(resolvedUsername).trim();
+      }
+    } catch (searchError) {
+      if (!isLdapReferralError(searchError)) {
+        console.warn(
+          "LDAP search gagal setelah bind sukses:",
+          searchError?.name || searchError,
+        );
+      }
     }
 
+    console.log("LDAP bind sukses, search dilewati:", bindDn);
     return username;
   } catch (error) {
     if (error.statusCode) {
       throw error;
     }
 
-    const ldapError = new Error("Gagal login, LDAP gagal authorize user.");
-    ldapError.statusCode = 400;
-    throw ldapError;
+    console.error("LDAP auth error:", error?.name || error);
+    throw mapLdapAuthError(error);
   } finally {
     if (client) {
       await client.unbind().catch(() => {});
@@ -164,10 +293,7 @@ const authenticateLdapCredentials = async (usernameRaw, password) => {
 };
 
 const getOrCreateLdapUser = async (username) => {
-  let userDB = await UserRefrensi.findOne({
-    username,
-    authMethod: "ldap",
-  });
+  let userDB = await UserRefrensi.findOne({ username });
 
   if (!userDB) {
     const kodeKasir = await generateUniqueKodeKasir(username);
@@ -184,6 +310,14 @@ const getOrCreateLdapUser = async (username) => {
     });
     await userDB.save();
     return userDB;
+  }
+
+  if (userDB.authMethod !== "ldap") {
+    const error = new Error(
+      "Username sudah terdaftar dengan metode login App, bukan LDAP.",
+    );
+    error.statusCode = 400;
+    throw error;
   }
 
   if (!userDB.kodeKasir) {
@@ -230,7 +364,7 @@ router.post("/ldap", async (req, res) => {
     console.log(error);
     return res.status(error.statusCode || 500).json({
       message: error.message || "Gagal login, silakan coba lagi.",
-      error: error.message,
+      error: error.details || error.message,
     });
   }
 });
@@ -262,7 +396,7 @@ router.post("/ldapMobile", async (req, res) => {
     console.log(error);
     return res.status(error.statusCode || 500).json({
       message: error.message || "Gagal login, silakan coba lagi.",
-      error: error.message,
+      error: error.details || error.message,
     });
   }
 });
@@ -313,7 +447,7 @@ router.post("/createNewUser", async (req, res) => {
       kodeKasir = customKodeKasir;
     } else {
       // Generate kodeKasir otomatis jika tidak disediakan
-      kodeKasir = await   generateUniqueKodeKasir(username);
+      kodeKasir = await generateUniqueKodeKasir(username);
     }
 
     // Hash password
@@ -367,7 +501,7 @@ router.post("/createNewUser", async (req, res) => {
   } catch (error) {
     if (error.code === 11000) {
       return res.status(400).json({
-        message: "Username atau email sudah digunakan",
+        message: "Username sudah digunakan",
         errors: error,
       });
     }
@@ -466,9 +600,11 @@ router.put("/updateUser", async (req, res) => {
 router.get("/getUserInfo", async (req, res) => {
   try {
     if (req.userId) {
-      const userDB = await UserRefrensi.findById(req.userId).select(
-        "_id username blockedAccess roleName totalHargaPenjualan totalQuantityPenjualan targetHargaPenjualan targetQuantityPenjualan kodeKasir",
-      );
+      const userDB = await UserRefrensi.findById(req.userId)
+        .select(
+          "_id username blockedAccess roleName totalHargaPenjualan totalQuantityPenjualan targetHargaPenjualan targetQuantityPenjualan kodeKasir currentOutlet",
+        )
+        .populate("currentOutlet", "_id kodeOutlet namaOutlet");
       if (!userDB) {
         return res.status(404).json({ message: "akun tidak ditemukan" });
       }
@@ -477,7 +613,7 @@ router.get("/getUserInfo", async (req, res) => {
           .status(403)
           .json({ message: "Akun anda telah dinonaktifkan" });
       } else {
-        return res.json({ userInfo: userDB });
+        return res.json({ userInfo: userDB, outlet: userDB.currentOutlet });
       }
     } else {
       return res.status(401).json({ message: "Tidak ditemukan data" });

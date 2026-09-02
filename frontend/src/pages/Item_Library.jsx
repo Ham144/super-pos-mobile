@@ -790,7 +790,7 @@ const ItemLibrary = () => {
                 <Package className="w-4 h-4 mr-2" />
                 Total: {totalItems} Item
               </div>
-
+              
               <button
                 onClick={() => {
                   setselectedInventory(null);

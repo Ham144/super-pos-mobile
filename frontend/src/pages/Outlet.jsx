@@ -10,22 +10,15 @@ import {
   getOuletList,
   registerOutlet,
 } from "../api/outletApi";
+import ModalOutletEdit from "@/components/ModalOutletEdit";
 import {
-  ShieldQuestion,
-  Package,
   Plus,
-  X,
-  Building2,
-  MapPin,
-  CreditCard,
-  Clock,
-  Tag,
-  Users,
+  Settings2,
+  ShieldQuestion,
   Store,
-  FileText,
-  Image as ImageIcon,
-  HelpCircle,
-  ChevronRight,
+  Shield,
+  BadgeInfo,
+  ShieldOff,
 } from "lucide-react";
 
 import toast from "react-hot-toast";
@@ -41,12 +34,13 @@ import ModalFavoritedInventoryPick from "@/components/ModalFavoritedInventoryPic
 import { getAllSpg } from "@/api/spgApi";
 
 const Outlet = () => {
-  const [showEditForm, setShowEditForm] = useState(true);
   const [selectedOutlet, setSelectedOutlet] = useState();
   const initialNewOutletForm = {
+    kodeOutlet: "",
     namaOutlet: "",
     description: "",
-    kasirList: [], //kasir list di state yang beda karena dikirim ke api yg beda
+    mode: "",
+    kasirList: [],
   };
   const [newOutletForm, setNewOutletForm] = useState(initialNewOutletForm);
   const modalPickKasirRef = useRef();
@@ -90,38 +84,28 @@ const Outlet = () => {
       .catch(() => setSelectedFavoritedSkus([]));
   }, [selectedOutlet?._id]);
 
-  const { mutateAsync: handleEditOutlet } = useMutation({
-    mutationFn: async (body) => {
-      // Simpan daftar kasir sebelum edit
-      const kasirList = [...(body.kasirList || [])];
+  const { mutateAsync: handleEditOutlet, isPending: isSavingOutlet } =
+    useMutation({
+      mutationFn: async (body) => {
+        const kasirList = [...(body.kasirList || [])];
+        const { kasirList: _, ...outletData } = body;
 
-      // Hapus kasirList dari body yang dikirim ke API
-      const { kasirList: _, ...outletData } = body;
+        await editOutlet(outletData);
 
-      // Edit outlet tanpa kasirList
-      await editOutlet(outletData);
-
-      // Assign kasir ke outlet satu per satu
-      if (kasirList?.length > 0) {
-        const assignPromises = kasirList?.map(async (kasirId) => {
-          return await assignUserToOutlet(kasirId, body._id);
-        });
-        await Promise.all(assignPromises);
-      }
-
-      setSelectedOutlet(null);
-      setNewOutletForm(null);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries(["outlet"]);
-      setSelectedOutlet(null);
-      setShowEditForm(false);
-      toast.success("Berhasil mengedit outlet");
-    },
-    onError: (err) => {
-      toast.error(err.response.data.message);
-    },
-  });
+        if (kasirList?.length > 0) {
+          const assignPromises = kasirList.map((kasirId) =>
+            assignUserToOutlet(kasirId, body._id),
+          );
+          await Promise.all(assignPromises);
+        }
+      },
+      onSuccess: () => {
+        queryClient.invalidateQueries(["outlet"]);
+      },
+      onError: (err) => {
+        throw err;
+      },
+    });
 
   const { mutateAsync: handleAssignSpgToOutlet } = useMutation({
     mutationFn: async ({ spgIds, outletId }) => {
@@ -204,8 +188,8 @@ const Outlet = () => {
     onSuccess: () => {
       queryClient.invalidateQueries(["outlet"]);
       toast.success("Berhasil menghapus outlet");
-      setSelectedOutlet();
-      setShowEditForm(false);
+      setSelectedOutlet(null);
+      document.getElementById("modalOutletEdit")?.close();
     },
     onError: (error) => {
       toast.error(
@@ -276,26 +260,32 @@ const Outlet = () => {
   };
 
   const handleEditClick = (outlet) => {
-    setSelectedOutlet(outlet);
-    setShowEditForm(true);
+    setSelectedOutlet({ ...outlet });
+    requestAnimationFrame(() => {
+      document.getElementById("modalOutletEdit")?.showModal();
+    });
   };
 
   // Function to reset the new outlet form
   const resetNewOutletForm = () => {
-    setNewOutletForm({
-      namaOutlet: "",
-      description: "",
-      kasirList: [],
-      spgList: [],
-      logo: null,
-      brandIds: [],
-    });
-
+    setNewOutletForm(initialNewOutletForm);
     setSelectedOutlet();
-    // Also reset the kasir selection modal
     if (modalPickKasirRef.current) {
       modalPickKasirRef.current.resetModal();
     }
+  };
+
+  const handleRemoveKasir = (kasirId) => {
+    setSelectedOutlet((prev) => ({
+      ...prev,
+      kasirList: (prev.kasirList || []).filter((id) => id !== kasirId),
+    }));
+  };
+
+  const modeLabel = (mode) => {
+    if (mode === "offline") return "Offline";
+    if (mode === "stateless") return "Stateless";
+    return "—";
   };
 
   //untuk new outlet
@@ -360,31 +350,70 @@ const Outlet = () => {
   };
 
   return (
-    <div className="flex bg-gradient-to-br from-blue-50 to-white min-h-screen p-6 gap-6 w-full">
-      {/* Left Column: Outlet List (75% width) */}
-      <div className="flex flex-1 flex-col  space-y-4 w-3/4">
+    <div className="bg-gradient-to-br from-blue-50 to-white min-h-screen p-6 w-full">
+      <div className="flex flex-col space-y-4  mx-auto ">
         {/* Header Actions */}
-        <div className="flex items-center justify-between">
-          <button
-            onClick={() => {
-              resetNewOutletForm();
-              document.getElementById("newoutlet").showModal();
-            }}
-            className="bg-blue-600 text-white px-5 py-2.5 rounded-xl shadow-lg hover:bg-blue-700 transition-all duration-200 flex items-center gap-2 font-medium shadow-blue-200"
-          >
-            <Plus className="w-5 h-5" />
-            Outlet Baru
-          </button>
+        {/* Header */}
+        <div className="w-full bg-white rounded-2xl shadow-sm border border-slate-200/80 p-6 mb-6">
+          <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-6">
+            {/* Left: Title & Action */}
+            <div className="flex items-center justify-between xl:justify-start gap-4 flex-wrap">
+              <div className="flex items-center gap-3.5">
+                <div>
+                  <h1 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight">
+                    Manajemen Outlet
+                  </h1>
+                  <p className="text-xs text-slate-400 font-medium hidden sm:block">
+                    Kelola konfigurasi sinkronisasi dan status operasional
+                    outlet
+                  </p>
+                </div>
+              </div>
 
-          <div className="flex items-center gap-3">
-            <div className="bg-white px-5 py-2.5 rounded-xl shadow-md border border-blue-100">
-              <span className="text-blue-600 font-semibold">
-                Total Outlet: {outletList?.data?.length || 0}
-              </span>
+              <button
+                onClick={() => {
+                  resetNewOutletForm();
+                  document.getElementById("newoutlet").showModal();
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white text-sm font-semibold rounded-xl shadow-sm hover:shadow transition-all duration-150 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Outlet Baru</span>
+              </button>
+            </div>
+
+            {/* Right: Info / Status Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 xl:max-w-2xl w-full">
+              {/* Offline Mode Card */}
+              <div className="rounded-xl border border-sky-100 bg-sky-50/60 p-3.5 flex flex-col justify-start">
+                <div className="flex items-center gap-2 text-sky-800 font-semibold text-xs tracking-wide uppercase mb-1.5">
+                  <div className="p-1 bg-sky-200/60 rounded-md">
+                    <Shield className="w-3.5 h-3.5 text-sky-700" />
+                  </div>
+                  Offline Mode
+                </div>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Mendukung kerja luring & sinkronisasi berkala saat online.
+                  Stok & katalog tersimpan di database lokal.
+                </p>
+              </div>
+
+              {/* Stateless Mode Card */}
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3.5 flex flex-col justify-start">
+                <div className="flex items-center gap-2 text-indigo-800 font-semibold text-xs tracking-wide uppercase mb-1.5">
+                  <div className="p-1 bg-indigo-200/60 rounded-md">
+                    <ShieldOff className="w-3.5 h-3.5 text-indigo-700" />
+                  </div>
+                  Stateless Mode
+                </div>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Wajib koneksi internet aktif. Data kuantitas & library produk
+                  langsung diambil real-time dari SOAP NAV.
+                </p>
+              </div>
             </div>
           </div>
         </div>
-
         {/* Table Container */}
         <div className="bg-white rounded-2xl shadow-xl border border-blue-100 overflow-hidden">
           <div className="overflow-x-auto">
@@ -461,21 +490,13 @@ const Outlet = () => {
                     </div>
                   </th>
                   <th className="px-4 py-4 text-left text-sm font-semibold">
-                    <div className="flex items-center gap-1">
-                      Alamat
-                      <div
-                        className="tooltip tooltip-bottom"
-                        data-tip="Alamat outlet"
-                      >
-                        <ShieldQuestion className="w-4 h-4 text-blue-200" />
-                      </div>
-                    </div>
-                  </th>
-                  <th className="px-4 py-4 text-left text-sm font-semibold">
-                    NPWP
+                    Mode
                   </th>
                   <th className="px-4 py-4 text-left text-sm font-semibold">
                     Brand
+                  </th>
+                  <th className="px-4 py-4 text-center text-sm font-semibold w-24">
+                    Aksi
                   </th>
                 </tr>
               </thead>
@@ -483,8 +504,7 @@ const Outlet = () => {
                 {outletList?.data?.map((outlet) => (
                   <tr
                     key={outlet._id}
-                    onClick={() => handleEditClick(outlet)}
-                    className="hover:bg-blue-50/50 cursor-pointer transition-all duration-200 group"
+                    className="hover:bg-blue-50/50 transition-all duration-200 group"
                   >
                     <td className="px-4 py-4 text-sm">
                       <span className="font-mono bg-blue-50 px-2 py-1 rounded-lg text-blue-700">
@@ -561,11 +581,20 @@ const Outlet = () => {
                     <td className="px-4 py-4 text-sm text-gray-600 max-w-[150px] truncate">
                       {outlet.namaPerusahaan || "-"}
                     </td>
-                    <td className="px-4 py-4 text-sm text-gray-600 max-w-[150px] truncate">
-                      {outlet.alamat || "-"}
-                    </td>
-                    <td className="px-4 py-4 text-sm text-gray-600">
-                      {outlet.npwp || "-"}
+                    <td className="px-4 py-4">
+                      {outlet.mode ? (
+                        <span
+                          className={`badge badge-sm font-medium ${
+                            outlet.mode === "stateless"
+                              ? "badge-info"
+                              : "badge-warning"
+                          }`}
+                        >
+                          {modeLabel(outlet.mode)}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400 text-sm">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-4">
                       {outlet.brandIds?.length > 0 && (
@@ -591,6 +620,16 @@ const Outlet = () => {
                         </div>
                       )}
                     </td>
+                    <td className="px-4 py-4 text-center">
+                      <button
+                        type="button"
+                        onClick={() => handleEditClick(outlet)}
+                        className="btn btn-sm btn-ghost text-blue-700 hover:bg-blue-100"
+                        title="Konfigurasi outlet"
+                      >
+                        <Settings2 className="w-4 h-4" />
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -599,461 +638,36 @@ const Outlet = () => {
         </div>
       </div>
 
-      {/* Right Column: Edit Outlet */}
-      {showEditForm && selectedOutlet && (
-        <div className="bg-white rounded-2xl shadow-xl border border-blue-100 sticky top-6 h-screen overflow-hidden flex-1">
-          <div className="h-full flex flex-col">
-            {/* Header */}
-            <div className="p-6 border-b border-blue-100 bg-gradient-to-r from-blue-600 to-blue-700">
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <Building2 className="w-5 h-5" />
-                Edit Outlet
-              </h2>
-            </div>
-
-            {/* Form */}
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleEditOutlet(selectedOutlet);
-              }}
-              className="flex-1 overflow-y-auto p-6"
-            >
-              <div className="space-y-5">
-                {/* Action Buttons */}
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    className="flex-1 bg-gray-100 text-gray-700 px-4 py-2.5 rounded-xl hover:bg-gray-200 transition-all duration-200 font-medium text-sm"
-                    onClick={() => setShowEditForm(false)}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOutletToDelete(selectedOutlet?._id);
-                      document.getElementById("modal_confirmation").showModal();
-                    }}
-                    className="flex-1 bg-red-500 text-white px-4 py-2.5 rounded-xl hover:bg-red-600 transition-all duration-200 font-medium text-sm shadow-lg shadow-red-200"
-                  >
-                    Hapus
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 bg-blue-600 text-white px-4 py-2.5 rounded-xl hover:bg-blue-700 transition-all duration-200 font-medium text-sm shadow-lg shadow-blue-200"
-                  >
-                    Update
-                  </button>
-                </div>
-
-                {/* Form Fields */}
-                <div className="space-y-4">
-                  {/* Nama Outlet */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1">
-                      <Store className="w-4 h-4 text-blue-950" />
-                      Nama Outlet
-                    </label>
-                    <input
-                      type="text"
-                      className="w-full border border-gray-200 px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-blue-950 focus:border-transparent transition-all duration-200"
-                      placeholder="Masukkan nama outlet"
-                      value={selectedOutlet.namaOutlet}
-                      onChange={(e) =>
-                        setSelectedOutlet((prev) => ({
-                          ...prev,
-                          namaOutlet: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-
-                  {/* Deskripsi */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1">
-                      <FileText className="w-4 h-4 text-blue-950" />
-                      Deskripsi
-                    </label>
-                    <input
-                      type="text"
-                      className="w-full border border-gray-200 px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-blue-950 focus:border-transparent transition-all duration-200"
-                      placeholder="Masukkan deskripsi outlet"
-                      value={selectedOutlet.description}
-                      onChange={(e) =>
-                        setSelectedOutlet((prev) => ({
-                          ...prev,
-                          description: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-
-                  {/* Nama Perusahaan */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1">
-                      <Building2 className="w-4 h-4 text-blue-950" />
-                      Nama Perusahaan
-                    </label>
-                    <input
-                      type="text"
-                      className="w-full border border-gray-200 px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-blue-950 focus:border-transparent transition-all duration-200"
-                      placeholder="Masukkan nama perusahaan"
-                      value={selectedOutlet.namaPerusahaan}
-                      onChange={(e) =>
-                        setSelectedOutlet((prev) => ({
-                          ...prev,
-                          namaPerusahaan: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-
-                  {/* Alamat */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1">
-                      <MapPin className="w-4 h-4 text-blue-950" />
-                      Alamat
-                    </label>
-                    <input
-                      type="text"
-                      className="w-full border border-gray-200 px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-blue-950 focus:border-transparent transition-all duration-200"
-                      placeholder="Masukkan alamat"
-                      value={selectedOutlet.alamat}
-                      onChange={(e) =>
-                        setSelectedOutlet((prev) => ({
-                          ...prev,
-                          alamat: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-
-                  {/* NPWP */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1">
-                      <CreditCard className="w-4 h-4 text-blue-950" />
-                      NPWP
-                    </label>
-                    <input
-                      type="text"
-                      className="w-full border border-gray-200 px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-blue-950 focus:border-transparent transition-all duration-200"
-                      placeholder="Masukkan NPWP"
-                      value={selectedOutlet.npwp}
-                      onChange={(e) =>
-                        setSelectedOutlet((prev) => ({
-                          ...prev,
-                          npwp: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-
-                  {/* Periode Settlement */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                      <div className="flex items-center gap-1">
-                        <Clock className="w-4 h-4 text-blue-950" />
-                        Periode Settlement (hari)
-                        <div
-                          className="tooltip tooltip-left"
-                          data-tip="Untuk statistik sales_report filter dan settlement"
-                        >
-                          <HelpCircle className="w-4 h-4 text-gray-400" />
-                        </div>
-                      </div>
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      className="w-full border border-gray-200 px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-blue-950 focus:border-transparent transition-all duration-200"
-                      placeholder="Masukkan periode settlement"
-                      value={selectedOutlet.periodeSettlement}
-                      onChange={(e) =>
-                        setSelectedOutlet((prev) => ({
-                          ...prev,
-                          periodeSettlement: parseInt(e.target.value),
-                        }))
-                      }
-                    />
-                  </div>
-
-                  {/* Jam Settlement */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1">
-                      <Clock className="w-4 h-4 text-blue-950" />
-                      Jam Settlement
-                    </label>
-                    <input
-                      type="time"
-                      className="w-full border border-gray-200 px-4 py-2.5 rounded-xl focus:ring-2 focus:ring-blue-950 focus:border-transparent transition-all duration-200"
-                      value={selectedOutlet.jamSettlement || "00:00"}
-                      onChange={(e) =>
-                        setSelectedOutlet((prev) => ({
-                          ...prev,
-                          jamSettlement: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-
-                  {/* Brand */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                      <div className="flex items-center gap-1">
-                        <Tag className="w-4 h-4 text-blue-950" />
-                        Brand Terhubung
-                        <div
-                          className="tooltip tooltip-bottom"
-                          data-tip="Brand yang akan ditampilkan di mobile app"
-                        >
-                          <HelpCircle className="w-4 h-4 text-gray-400" />
-                        </div>
-                      </div>
-                    </label>
-                    <button
-                      type="button"
-                      className="w-full border border-gray-200 bg-gray-50 px-4 py-2.5 rounded-xl hover:border-blue-950 hover:bg-blue-50 transition-all duration-200 flex items-center justify-between text-gray-700"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        document.getElementById("modalBrandPick").showModal();
-                      }}
-                    >
-                      <span className="flex items-center gap-2">
-                        <Package className="w-4 h-4 text-blue-950" />
-                        Tambah Brand
-                      </span>
-                      <ChevronRight className="w-4 h-4 text-gray-400" />
-                    </button>
-                  </div>
-
-                  {/* Kasir List */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1">
-                      <Users className="w-4 h-4 text-blue-950" />
-                      Kasir List
-                    </label>
-                    <div
-                      onClick={() =>
-                        document.getElementById("pickKasir").showModal()
-                      }
-                      className="w-full border border-gray-200 bg-gray-50 px-4 py-3 rounded-xl cursor-pointer hover:border-blue-950 transition-all duration-200"
-                    >
-                      {selectedOutlet?.kasirList?.length === 0 ? (
-                        <span className="text-gray-400 text-sm">
-                          Pilih kasir untuk outlet ini
-                        </span>
-                      ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {userList?.data
-                            ?.filter((user) =>
-                              selectedOutlet?.kasirList?.includes(user._id),
-                            )
-                            ?.map((user) => (
-                              <div
-                                key={user._id}
-                                className="flex items-center bg-blue-100 text-blue-700 rounded-lg px-3 py-1.5 text-sm"
-                              >
-                                <span>{user.username}</span>
-                                <button
-                                  type="button"
-                                  className="ml-2 hover:text-red-500 transition-colors"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedOutlet((prev) => ({
-                                      ...prev,
-                                      kasirList: prev.kasirList.filter(
-                                        (id) => id !== user._id,
-                                      ),
-                                    }));
-                                  }}
-                                >
-                                  <X className="w-3 h-3" />
-                                </button>
-                              </div>
-                            ))}
-                          <button
-                            type="button"
-                            className="text-blue-600 hover:bg-blue-100 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              document.getElementById("pickKasir").showModal();
-                            }}
-                          >
-                            + Add
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* SPG List */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1">
-                      <Users className="w-4 h-4 text-blue-950" />
-                      SPG List
-                    </label>
-                    <div
-                      onClick={() => {
-                        setSelectedSpgIds(selectedOutlet?.spgList || []);
-                        document.getElementById("modalSpgPick").showModal();
-                      }}
-                      className="w-full border border-gray-200 bg-gray-50 px-4 py-3 rounded-xl cursor-pointer hover:border-blue-950 transition-all duration-200"
-                    >
-                      {!selectedOutlet?.spgList?.length ? (
-                        <span className="text-gray-400 text-sm">
-                          Pilih SPG untuk outlet ini
-                        </span>
-                      ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {spgList?.data
-                            ?.filter((spg) =>
-                              selectedOutlet?.spgList?.some(
-                                (id) => String(id) === String(spg?._id),
-                              ),
-                            )
-                            .map((spg) => (
-                              <div
-                                key={spg?._id}
-                                className="flex items-center bg-purple-100 text-purple-700 rounded-lg px-3 py-1.5 text-sm"
-                              >
-                                <span>{spg?.name}</span>
-                                <button
-                                  type="button"
-                                  className="ml-2 hover:text-red-500 transition-colors"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleRemoveSpgFromOutlet(spg._id);
-                                  }}
-                                >
-                                  <X className="w-3 h-3" />
-                                </button>
-                              </div>
-                            ))}
-                          <button
-                            type="button"
-                            className="text-purple-600 hover:bg-purple-100 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedSpgIds(selectedOutlet?.spgList || []);
-                              document
-                                .getElementById("modalSpgPick")
-                                .showModal();
-                            }}
-                          >
-                            + Add
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* SKU tampil gambar di mobile */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5 flex items-center gap-1">
-                      <ImageIcon className="w-4 h-4 text-blue-950" />
-                      SKU Tampil Gambar (favorites)
-                      <div
-                        className="tooltip tooltip-bottom"
-                        data-tip="SKU yang menampilkan gambar di aplikasi mobile"
-                      >
-                        <HelpCircle className="w-4 h-4 text-gray-400" />
-                      </div>
-                    </label>
-                    <div
-                      onClick={() =>
-                        document
-                          .getElementById("modalFavoritedInventoryPick")
-                          .showModal()
-                      }
-                      className="w-full border border-gray-200 bg-gray-50 px-4 py-3 rounded-xl cursor-pointer hover:border-blue-950 transition-all duration-200"
-                    >
-                      {!selectedFavoritedSkus?.length ? (
-                        <span className="text-gray-400 text-sm">
-                          Pilih SKU yang menampilkan gambar
-                        </span>
-                      ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {selectedFavoritedSkus.map((sku) => (
-                            <div
-                              key={sku}
-                              className="flex items-center bg-teal-100 text-teal-700 rounded-lg px-3 py-1.5 text-sm"
-                            >
-                              <span>{sku}</span>
-                              <button
-                                type="button"
-                                className="ml-2 hover:text-red-500 transition-colors"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleRemoveFavoritedSku(sku);
-                                }}
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            </div>
-                          ))}
-                          <button
-                            type="button"
-                            className="text-teal-600 hover:bg-teal-100 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              document
-                                .getElementById("modalFavoritedInventoryPick")
-                                .showModal();
-                            }}
-                          >
-                            + Tambah
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Logo */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                      <ImageIcon className="w-4 h-4 text-blue-950" />
-                      <span className="text-sm font-medium text-gray-700">
-                        Logo Outlet
-                      </span>
-                      <div className="dropdown dropdown-hover">
-                        <HelpCircle className="w-4 h-4 text-gray-400" />
-                      </div>
-                    </div>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="w-full text-sm text-gray-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition-all duration-200"
-                      onChange={(e) => {
-                        const file = e.target.files[0];
-                        if (file) {
-                          const reader = new FileReader();
-                          reader.onload = () => {
-                            setSelectedOutlet({
-                              ...selectedOutlet,
-                              logo: reader.result,
-                            });
-                          };
-                          reader.readAsDataURL(file);
-                        }
-                      }}
-                    />
-                    {selectedOutlet?.logo && (
-                      <div className="mt-3 flex justify-center">
-                        <img
-                          src={selectedOutlet.logo}
-                          alt="Preview Logo"
-                          className="w-24 h-24 object-contain rounded-xl border-2 border-blue-200 p-1 bg-white"
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <ModalOutletEdit
+        outlet={selectedOutlet}
+        setOutlet={setSelectedOutlet}
+        onSave={handleEditOutlet}
+        onDelete={() => {
+          setOutletToDelete(selectedOutlet?._id);
+          document.getElementById("modal_confirmation")?.showModal();
+        }}
+        userList={userList}
+        brandList={brandList}
+        spgList={spgList}
+        selectedFavoritedSkus={selectedFavoritedSkus}
+        onOpenPickKasir={() =>
+          document.getElementById("pickKasir")?.showModal()
+        }
+        onOpenBrandPick={() =>
+          document.getElementById("modalBrandPick")?.showModal()
+        }
+        onOpenSpgPick={() => {
+          setSelectedSpgIds(selectedOutlet?.spgList || []);
+          document.getElementById("modalSpgPick")?.showModal();
+        }}
+        onOpenFavoritedPick={() =>
+          document.getElementById("modalFavoritedInventoryPick")?.showModal()
+        }
+        onRemoveKasir={handleRemoveKasir}
+        onRemoveSpg={handleRemoveSpgFromOutlet}
+        onRemoveFavoritedSku={handleRemoveFavoritedSku}
+        isSaving={isSavingOutlet}
+      />
 
       {/* Modals */}
       <ModalRegisterOutlet

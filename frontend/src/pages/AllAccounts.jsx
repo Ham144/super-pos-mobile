@@ -4,7 +4,11 @@ import { deleteKasir } from "../api/kasirApi";
 import { toast } from "react-hot-toast";
 import { deleteSpg, editSpg, getAllSpg } from "../api/spgApi";
 import ModalNewAccount from "@/components/ModalNewAccount";
-import { getOuletList, assignUserToOutlet } from "../api/outletApi";
+import {
+  getOuletList,
+  assignUserToOutlet,
+  getSimpleOuletList,
+} from "../api/outletApi";
 import { getAllAccount, updateUser } from "@/api/authApi";
 import { mockBackend, mockPages } from "@/api/constant";
 import {
@@ -45,10 +49,12 @@ const AllAccounts = () => {
     queryFn: getAllSpg,
     queryKey: ["spg"],
   });
+
   const { data: outletList } = useQuery({
-    queryFn: getOuletList,
-    queryKey: ["outlet"],
+    queryFn: getSimpleOuletList,
+    queryKey: ["simpleOutletList"],
   });
+
   const { mutateAsync: handleUpdateSpg } = useMutation({
     mutationFn: async () => {
       const body = {
@@ -257,35 +263,38 @@ const AllAccounts = () => {
               </h1>
               <p className="text-sm text-gray-500 mt-1">
                 Akun di halaman ini bersifat stateful: dipakai untuk login,
-                session, role, dan akses. SPG dipindahkan ke menu SPG
-                Reference karena hanya data referensi stateless.
+                session, role, dan akses. SPG dipindahkan ke menu SPG Reference
+                karena hanya data referensi stateless.
               </p>
             </div>
           </div>
 
           {/* Stats Cards */}
           <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
-                    <div className="flex items-center gap-2 text-blue-700 font-semibold mb-2">
-                      <Shield className="w-4 h-4" />
-                      Stateful
-                    </div>
-                    <p className="text-sm text-gray-700">
-                      Akun login yang benar-benar masuk ke session aplikasi.
-                      Dipakai untuk user, kasir, admin, dan role lain.
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4">
-                    <div className="flex items-center gap-2 text-indigo-700 font-semibold mb-2">
-                      <BadgeInfo className="w-4 h-4" />
-                      Stateless
-                    </div>
-                    <p className="text-sm text-gray-700">
-                      SPG hanya data referensi. Bisa dibuat, diubah, dinonaktifkan,
-                      tetapi tidak dipakai untuk login, <a className="link" href="/spg_reference">spg reference</a>
-                    </p>
-                  </div>
-                </div>
+            <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
+              <div className="flex items-center gap-2 text-blue-700 font-semibold mb-2">
+                <Shield className="w-4 h-4" />
+                Stateful
+              </div>
+              <p className="text-sm text-gray-700">
+                Akun login yang benar-benar masuk ke session aplikasi. Dipakai
+                untuk user, kasir, admin, dan role lain.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4">
+              <div className="flex items-center gap-2 text-indigo-700 font-semibold mb-2">
+                <BadgeInfo className="w-4 h-4" />
+                Stateless
+              </div>
+              <p className="text-sm text-gray-700">
+                SPG hanya data referensi. Bisa dibuat, diubah, dinonaktifkan,
+                tetapi tidak dipakai untuk login,{" "}
+                <a className="link" href="/spg_reference">
+                  spg reference
+                </a>
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 

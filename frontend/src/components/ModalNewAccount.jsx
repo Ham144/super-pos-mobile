@@ -1,5 +1,5 @@
 import { createNewUser } from "@/api/authApi";
-import { getOuletList } from "@/api/outletApi";
+import { getSimpleOuletList } from "@/api/outletApi";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import React, { useState } from "react";
 import toast from "react-hot-toast";
@@ -8,9 +8,6 @@ import { mockBackend, mockPages } from "@/api/constant";
 import {
   User,
   Lock,
-  Mail,
-  Phone,
-  Target,
   Store,
   Shield,
   Key,
@@ -40,7 +37,7 @@ const ModalNewAccount = () => {
   const queryClient = useQueryClient();
   const { data: outletList } = useQuery({
     queryKey: ["outlet"],
-    queryFn: getOuletList,
+    queryFn: getSimpleOuletList,
   });
 
   const { mutateAsync: handleCreateNewUser } = useMutation({
@@ -108,8 +105,6 @@ const ModalNewAccount = () => {
     }));
   };
 
-  console.log("newAccount", newAccount);
-
   const toggleBlockedAccess = (page) => {
     setNewAccount((prev) => {
       const blockedAccess = prev.blockedAccess || [];
@@ -153,7 +148,7 @@ const ModalNewAccount = () => {
             </form>
           </div>
         </div>
-        
+
         {/* Form */}
         <form
           onSubmit={(e) => {
