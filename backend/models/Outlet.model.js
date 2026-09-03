@@ -28,7 +28,6 @@ const outletSchema = mongoose.Schema({
   namaPerusahaan: String,
   alamat: String,
   npwp: String,
-  kasirList: [mongoose.Schema.Types.ObjectId],
   spgList: [mongoose.Schema.Types.ObjectId],
   brandIds: [mongoose.Schema.Types.ObjectId],
   periodeSettlement: {
@@ -59,6 +58,8 @@ const outletSchema = mongoose.Schema({
     enum: ["stateless", "offline"],
     required: true,
   },
+  //akun yang punya akses ke outlet ini
+  kasirList: [mongoose.Schema.Types.ObjectId],
   ExternalProductReference: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "ExternalProductReference",

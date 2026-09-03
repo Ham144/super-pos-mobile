@@ -20,8 +20,9 @@ const LevelWrapper = () => {
         setUserInfo(res?.userInfo);
         return res?.userInfo;
       } catch (error) {
-        //logout otomatis jika token invalid atau salah
-        // toast.error(error?.response?.data?.message || "Session expired");
+        toast.error(
+          error?.response?.data?.message || "Sesi Anda telah berakhir",
+        );
         clearUserInfo();
         return false;
       }

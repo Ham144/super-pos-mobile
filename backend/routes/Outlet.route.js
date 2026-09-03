@@ -3,7 +3,8 @@ import Outlet from "../models/Outlet.model.js";
 import sharp from "sharp";
 import { findInventoryBySku } from "../utils/validatePoSkus.js";
 import UserRefrensi from "../models/User.model.js";
-import generateTokenJWT from "../utils/generateTokenJWT.js";
+import generateTokenJWT, { setAuthCookie } from "../utils/generateTokenJWT.js";
+import { hasOutletAccess } from "../utils/outletAccess.js";
 
 const router = Router();
 
@@ -106,7 +107,9 @@ router.get("/getAllOutlet", async (req, res) => {
 //simple outlet list
 router.get("/simple-outlet-list", async (req, res) => {
   try {
-    const data = await Outlet.find({}).select("kodeOutlet namaOutlet");
+    const data = await Outlet.find({
+      kasirList: { $in: [req.userId] },
+    }).select("kodeOutlet namaOutlet");
     return res.json({ message: "berhasil", data });
   } catch (error) {
     console.log(error);
@@ -133,51 +136,26 @@ router.put("/edit", async (req, res) => {
         ? await processLogo(req.body.logo)
         : currentOutlet.logo;
 
-    // Filter valid kasir IDs
-    const kasirListModified = req.body?.kasirList
-      ? req.body?.kasirList?.filter(
-          (item) => item !== "" && item !== undefined && item != null,
-        )
-      : [];
+    const updateFields = {
+      namaOutlet: req.body.namaOutlet,
+      description: req.body.description,
+      logo: processedLogo,
+      namaPerusahaan: req?.body?.namaPerusahaan,
+      alamat: req?.body?.alamat,
+      npwp: req?.body?.npwp,
+      brandIds: req?.body?.brandIds,
+      periodeSettlement: req?.body?.periodeSettlement,
+      jamSettlement: req?.body?.jamSettlement,
+      mode: req?.body?.mode || null,
+    };
 
-    // Check if any of the new users are already assigned to other outlets
-    const usersInOtherOutlets = [];
-    for (const userId of kasirListModified) {
-      if (userId) {
-        const existingOutlet = await Outlet.findOne({
-          _id: { $ne: _id }, // Exclude the current outlet
-          kasirList: userId,
-        });
-        if (existingOutlet) {
-          usersInOtherOutlets.push(userId);
-        }
-      }
+    if (req.body.kasirList !== undefined) {
+      updateFields.kasirList = req.body.kasirList.filter(
+        (item) => item !== "" && item !== undefined && item != null,
+      );
     }
 
-    if (usersInOtherOutlets.length > 0) {
-      return res.status(400).json({
-        message:
-          "Beberapa kasir sudah terdaftar di outlet lain. gunakan AssignKasirToOutlet saja",
-        usersInOtherOutlets,
-      });
-    }
-
-    // Update outlet with processed logo
-    await Outlet.findByIdAndUpdate(_id, {
-      $set: {
-        namaOutlet: req.body.namaOutlet,
-        description: req.body.description,
-        kasirList: kasirListModified,
-        logo: processedLogo,
-        namaPerusahaan: req?.body?.namaPerusahaan,
-        alamat: req?.body?.alamat,
-        npwp: req?.body?.npwp,
-        brandIds: req?.body?.brandIds,
-        periodeSettlement: req?.body?.periodeSettlement,
-        jamSettlement: req?.body?.jamSettlement,
-        mode: req?.body?.mode || null,
-      },
-    });
+    await Outlet.findByIdAndUpdate(_id, { $set: updateFields });
 
     return res.json({ message: "success" });
   } catch (error) {
@@ -236,32 +214,30 @@ router.post("/assignUserToOutlet", async (req, res) => {
   }
 
   try {
-    // Remove user from any existing outlet's kasirList first
-    await Outlet.updateMany(
-      { kasirList: userId },
-      { $pull: { kasirList: userId } },
-    );
-
-    // If a new outlet is specified, add the user to that outlet's kasirList
     if (outletId) {
       const outletToUpdate = await Outlet.findById(outletId);
       if (!outletToUpdate) {
         return res.status(404).json({ message: "Outlet not found" });
       }
 
-      // Add user to the new outlet's kasirList if not already there
-      if (!outletToUpdate.kasirList.includes(userId)) {
+      const alreadyAssigned = outletToUpdate.kasirList.some(
+        (id) => id.toString() === userId.toString(),
+      );
+      if (!alreadyAssigned) {
         outletToUpdate.kasirList.push(userId);
         await outletToUpdate.save();
       }
+    } else {
+      await Outlet.updateMany(
+        { kasirList: userId },
+        { $pull: { kasirList: userId } },
+      );
     }
 
     return res.json({ message: "User outlet assignment updated successfully" });
   } catch (error) {
     console.error("Error assigning user to outlet:", error);
-    return res
-      .status(500)
-      .json({ message: "Failed to update user outlet assignment" });
+    return res.status(500).json({ message: error.message });
   }
 });
 
@@ -420,6 +396,14 @@ router.get("/switch-outlet/:outletId", async (req, res) => {
     return res.status(404).json({ message: "Outlet tidak ditemukan" });
   }
 
+  const allowed = await hasOutletAccess(req.userId, outletId);
+  if (!allowed) {
+    return res.status(403).json({
+      message: "Anda tidak memiliki akses ke outlet ini",
+      code: "OUTLET_ACCESS_REVOKED",
+    });
+  }
+
   await UserRefrensi.findByIdAndUpdate(req.userId, {
     $set: {
       currentOutlet: outletId,
@@ -432,6 +416,8 @@ router.get("/switch-outlet/:outletId", async (req, res) => {
       .status(400)
       .json({ message: "Terjadi kesalahan sementara, coba lagi" });
   }
+  setAuthCookie(res, token);
+
   return res.json({
     message: "berhasil switch outlet",
     currentOutlet: {

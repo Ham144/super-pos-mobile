@@ -70,7 +70,9 @@ export default function Login({ className, ...props }) {
         queryClient.invalidateQueries(["userInfo"]);
       } catch (error) {
         clearUserInfo();
-        toast.error("Sesi Anda telah berakhir. Silakan login kembali.");
+        if (error?.response?.data?.code !== "OUTLET_ACCESS_REVOKED") {
+          toast.error("Sesi Anda telah berakhir. Silakan login kembali.");
+        }
       } finally {
         setIsVerifying(false);
       }

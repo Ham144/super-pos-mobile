@@ -1,9 +1,10 @@
 import { Router } from "express";
 import LdapClient from "ldapjs-client";
-import generateTokenJWT from "../utils/generateTokenJWT.js";
+import generateTokenJWT, { setAuthCookie } from "../utils/generateTokenJWT.js";
 import generateTokenMobile from "../utils/generateTokenMobile.js";
 import UserRefrensi from "../models/User.model.js";
 import Outlet from "../models/Outlet.model.js";
+import { repairCurrentOutletIfNeeded } from "../utils/outletAccess.js";
 import bcrypt from "bcryptjs";
 import authorize from "../middlewares/authorize.js";
 import { getActiveDirectoryConfig } from "../utils/systemConfig.js";
@@ -31,20 +32,15 @@ router.post("/login", async (req, res) => {
     if (!isPasswordMatch) {
       return res.status(400).json({ message: "username atau password salah" });
     }
+    await repairCurrentOutletIfNeeded(userDB);
+
     const sanitizedUser = {
       _id: userDB._id,
       username: userDB.username,
     };
 
     const token = await generateTokenJWT(userDB._id);
-
-    // Set cookie di sini
-    res.cookie("token", token, {
-      httpOnly: true, // agar tidak bisa diakses dari client-side JS
-      secure: process.env.NODE_ENV == "production" ? true : false,
-      sameSite: "lax",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 hari
-    });
+    setAuthCookie(res, token);
 
     return res.json({
       message: "Selamat datang kembali",
@@ -342,19 +338,15 @@ router.post("/ldap", async (req, res) => {
     const username = await authenticateLdapCredentials(usernameRaw, password);
     const userDB = await getOrCreateLdapUser(username);
 
+    await repairCurrentOutletIfNeeded(userDB);
+
     const sanitizedUser = {
       _id: userDB._id,
       username: userDB.username,
     };
 
     const token = await generateTokenJWT(userDB._id);
-
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    setAuthCookie(res, token);
 
     return res.json({
       message: "Selamat datang kembali",
@@ -379,6 +371,8 @@ router.post("/ldapMobile", async (req, res) => {
     if (userDB?.isDisabled === true) {
       return res.status(403).json({ message: "Akun anda telah dinonaktifkan" });
     }
+
+    await repairCurrentOutletIfNeeded(userDB);
 
     const sanitized = {
       _id: userDB._id,
@@ -653,6 +647,8 @@ router.post("/loginMobile", authorize, async (req, res) => {
   if (!isPasswordMatch) {
     return res.status(400).json({ message: "username atau password salah" });
   }
+
+  await repairCurrentOutletIfNeeded(userDB);
 
   const sanitized = {
     _id: userDB._id,

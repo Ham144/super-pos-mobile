@@ -104,7 +104,7 @@ export default function ModalOutletEdit({
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await onSave(outlet);
+      const saveRes = await onSave(outlet);
 
       if (outlet._id && soapForm.endpoint && soapForm.usernameNTLM) {
         await saveSoapConfigByOutlet(outlet._id, {
@@ -117,7 +117,7 @@ export default function ModalOutletEdit({
             : {}),
         });
       }
-
+      
       if (adForm.AD_HOST && adForm.AD_DOMAIN && adForm.AD_BASE_DN) {
         await saveAdConfig({
           ...adForm,
@@ -125,7 +125,9 @@ export default function ModalOutletEdit({
         });
       }
 
-      toast.success("Konfigurasi outlet berhasil disimpan");
+      toast.success(
+        saveRes?.message || "Berhasil menyimpan konfigurasi outlet",
+      );
       document.getElementById("modalOutletEdit")?.close();
     } catch (err) {
       toast.error(

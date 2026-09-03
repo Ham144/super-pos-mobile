@@ -28,7 +28,6 @@ import ModalConfirmation from "../components/ModalConfirmation";
 import ModalBrandPick from "@/components/ModalBrandPick";
 import { getAllBrands } from "@/api/brandApi";
 import ModalRegisterOutlet from "@/components/ModalRegisterOutlet";
-import ModalConfirmation2 from "@/components/ModalConfirmation2";
 import ModalSpgMultiPick from "@/components/modalSpgMultiPick";
 import ModalFavoritedInventoryPick from "@/components/ModalFavoritedInventoryPick";
 import { getAllSpg } from "@/api/spgApi";
@@ -86,19 +85,7 @@ const Outlet = () => {
 
   const { mutateAsync: handleEditOutlet, isPending: isSavingOutlet } =
     useMutation({
-      mutationFn: async (body) => {
-        const kasirList = [...(body.kasirList || [])];
-        const { kasirList: _, ...outletData } = body;
-
-        await editOutlet(outletData);
-
-        if (kasirList?.length > 0) {
-          const assignPromises = kasirList.map((kasirId) =>
-            assignUserToOutlet(kasirId, body._id),
-          );
-          await Promise.all(assignPromises);
-        }
-      },
+      mutationFn: (body) => editOutlet(body),
       onSuccess: () => {
         queryClient.invalidateQueries(["outlet"]);
       },
@@ -198,65 +185,18 @@ const Outlet = () => {
     },
   });
 
-  const [ambiguKasir, setAmbiguKasir] = useState([]);
-  const [selectedKasirIds, setSelectedKasirIds] = useState([]);
-
-  const beforeHandleSelectKasir = (kasirIds) => {
-    // Simpan kasir IDs dari modal ke state
-    setSelectedKasirIds(kasirIds);
-
-    // Cek apakah ada kasir yang sudah berada di outlet lain
-    const usersInOtherOutlets = [];
-
-    // Loop untuk mencari kasir yang sudah terdaftar di outlet lain
-    kasirIds.forEach((kasirId) => {
-      const isUserInOtherOutlet = outletList?.data.some(
-        (outlet) =>
-          (selectedOutlet ? outlet._id !== selectedOutlet._id : true) &&
-          outlet.kasirList &&
-          outlet.kasirList.includes(kasirId),
-      );
-
-      if (isUserInOtherOutlet) {
-        // Tambahkan username ke list untuk ditampilkan di konfirmasi
-        const user = userList?.data?.find((u) => u._id === kasirId);
-        if (user?.username) {
-          usersInOtherOutlets.push(user.username);
-        }
-      }
-    });
-
-    if (usersInOtherOutlets?.length > 0) {
-      // Tampilkan modal konfirmasi jika ada konflik
-      setAmbiguKasir(usersInOtherOutlets);
-      document.getElementById("modal_confirmation2").showModal();
-    } else {
-      // Jika tidak ada konflik, langsung update state
-      handleKasirSelection();
-    }
-  };
-
-  // Fungsi untuk menerapkan pilihan kasir (tanpa API call)
-  const handleKasirSelection = () => {
-    if (!selectedKasirIds?.length) return;
-
+  const handleSelectKasir = (kasirIds) => {
     if (selectedOutlet) {
-      // Update state untuk outlet yang sudah ada
       setSelectedOutlet((prev) => ({
         ...prev,
-        kasirList: selectedKasirIds,
+        kasirList: kasirIds || [],
       }));
     } else {
-      // Update state untuk outlet baru
       setNewOutletForm((prev) => ({
         ...prev,
-        kasirList: selectedKasirIds,
+        kasirList: kasirIds || [],
       }));
     }
-
-    // Bersihkan state setelah selesai
-    setSelectedKasirIds([]);
-    setAmbiguKasir([]);
   };
 
   const handleEditClick = (outlet) => {
@@ -681,7 +621,7 @@ const Outlet = () => {
       <ModalPickKasir
         ref={modalPickKasirRef}
         key="kasir"
-        callback={beforeHandleSelectKasir}
+        callback={handleSelectKasir}
         currentSelected={
           selectedOutlet
             ? selectedOutlet.kasirList
@@ -702,21 +642,6 @@ const Outlet = () => {
         setSelectedOutlet={setSelectedOutlet}
         TambahkanTerpilih={tambahkanTerpilih}
         newOutletForm={newOutletForm}
-      />
-      <ModalConfirmation2
-        onConfirm={() => {
-          handleKasirSelection();
-          document.getElementById("modal_confirmation2").close();
-        }}
-        onCancel={() => {
-          document.getElementById("modal_confirmation2").close();
-          setAmbiguKasir([]);
-          setSelectedKasirIds([]);
-        }}
-        title={"Konfirmasi Pemindahan Kasir"}
-        message={`${ambiguKasir.join(
-          ", ",
-        )} sudah terdaftar di outlet lain. Satu kasir hanya dapat ditugaskan ke satu outlet, Apakah anda yakin ingin memindahkan kasir?`}
       />
       <ModalSpgMultiPick
         selectedOutletObj={selectedOutlet}

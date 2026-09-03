@@ -36,8 +36,11 @@ export const getUserInfo = async () => {
     const response = await axios.get(`${BASE_URL}/api/v1/auth/getUserInfo`, {
       withCredentials: true,
     });
-    return response.data;
+    return response.data; 
   } catch (error) {
+    if (error?.response?.data?.code === "OUTLET_ACCESS_REVOKED") {
+      throw error;
+    }
     console.log(error);
     return false;
   }

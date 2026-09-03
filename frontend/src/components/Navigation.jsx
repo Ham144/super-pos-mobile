@@ -65,7 +65,7 @@ const SideDrawer = ({ children }) => {
     outlets.find((o) => o._id === currentOutletId)?.namaOutlet ||
     userInfo?.currentOutlet?.namaOutlet ||
     "";
-
+  
   const { mutate: handleSwitchCurrentOutlet } = useMutation({
     mutationKey: ["switchCurrentOutlet"],
     mutationFn: switchCurrentOutlet,
