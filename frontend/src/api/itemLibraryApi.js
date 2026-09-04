@@ -56,7 +56,7 @@ export const perbaruiInventoryDariUnlisted = async () => {
     `${BASE_URL}/api/v1/unlistedLibraries/getUnlistedLibraryByQueries`,
     {
       withCredentials: true,
-    }
+    },
   );
   return response;
 };
@@ -67,7 +67,7 @@ export const updateSingleInventory = async (body) => {
     body,
     {
       withCredentials: true,
-    }
+    },
   );
   return response;
 };
@@ -78,7 +78,7 @@ export const createSingleInventory = async (body) => {
     body,
     {
       withCredentials: true,
-    }
+    },
   );
   return response;
 };
@@ -112,7 +112,7 @@ export const toggleDisableInventory = async (id) => {
     {},
     {
       withCredentials: true,
-    }
+    },
   );
   return response.data;
 };

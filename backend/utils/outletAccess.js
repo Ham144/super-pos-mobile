@@ -12,7 +12,7 @@ export const hasOutletAccess = async (userId, outletId) => {
 
 export const repairCurrentOutletIfNeeded = async (user) => {
   if (!user) return user;
-
+  
   const stillValid = await hasOutletAccess(user._id, user.currentOutlet);
   if (stillValid) return user;
 

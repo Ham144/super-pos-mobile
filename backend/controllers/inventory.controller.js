@@ -14,6 +14,18 @@ import { prepareBulkInventoryUpdates } from "../utils/prepareBulkInventoryUpdate
 import { resolveSkuFromReq } from "../utils/resolveSku.js";
 import { csvCell, parseCsvFile } from "../utils/csvDelimiter.js";
 
+const resolveUserOutlet = async (userId, userDB) => {
+  const user = userDB || (await UserRefrensi.findById(userId));
+  if (!user) return null;
+
+  if (user.currentOutlet) {
+    const byCurrent = await Outlet.findById(user.currentOutlet);
+    if (byCurrent) return byCurrent;
+  }
+
+  return Outlet.findOne({ kasirList: { $in: [user._id] } });
+};
+
 //ini untuk buat manual inventory, jarang dipake karena biasanya sudah ada didapat dari api pihak ketiga
 export const registerSingleInventori = async (req, res) => {
   //cek apakah barang sudah ada
@@ -530,23 +542,19 @@ export const getInventoryById = async (req, res) => {
   }
 };
 
-//mobile: get Initial Inventory
+// mobile: halaman inventory dari InventoryRefrensi (sumber katalog).
+// offline: dipakai dump ke AsyncStorage; stateless: fetch partial/live per page.
 export const getAllinventoriesMobile = async (req, res) => {
   const {
     startDate,
     endDate,
     page = 1,
     limit = 50,
-    asc = true,
     searchKey,
   } = req.query;
 
-  //default mendapatkan inventory dengan hanya brand terhubung ke outlet userInfo saja, ini khusus mobile, jika ingin bebas pakai getAllinventories(untuk web)
-  //kalau Your outlet tidak ada brand, maka akan mendapatkan semua inventory
   const userDB = await UserRefrensi.findById(req.userId);
-  const myOutlet = await Outlet.findOne({
-    kasirList: { $in: [userDB._id] },
-  });
+  const myOutlet = await resolveUserOutlet(req.userId, userDB);
   const brandIds = myOutlet?.brandIds;
   const brandList = await Brand.find({
     _id: { $in: brandIds },
@@ -554,7 +562,6 @@ export const getAllinventoriesMobile = async (req, res) => {
   const brandName = brandList.map((brand) => brand.name);
 
   const complex = {
-    // item disabled tidak boleh masuk ke mobile
     isDisabled: { $ne: true },
   };
   if (brandName.length > 0) {
@@ -582,5 +589,10 @@ export const getAllinventoriesMobile = async (req, res) => {
     .skip((Number(page) - 1) * Number(limit))
     .sort({ updatedAt: -1 });
 
-  return res.json({ message: "berhasil", data, totalItems });
+  return res.json({
+    message: "berhasil",
+    data,
+    totalItems,
+    outletMode: myOutlet?.mode || null,
+  });
 };

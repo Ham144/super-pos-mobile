@@ -598,7 +598,7 @@ router.get("/getUserInfo", async (req, res) => {
         .select(
           "_id username blockedAccess roleName totalHargaPenjualan totalQuantityPenjualan targetHargaPenjualan targetQuantityPenjualan kodeKasir currentOutlet",
         )
-        .populate("currentOutlet", "_id kodeOutlet namaOutlet");
+        .populate("currentOutlet", "_id kodeOutlet namaOutlet mode");
       if (!userDB) {
         return res.status(404).json({ message: "akun tidak ditemukan" });
       }

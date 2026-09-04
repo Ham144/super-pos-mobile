@@ -49,6 +49,7 @@ import PickVoucherDialog from "../components/pickVoucherDialog";
 import { useNavigate, useLocation } from "react-router-dom";
 import FilterInventories from "../components/filterInventories";
 import { useFilter, useUserInfo } from "../store";
+import { getOuletByUserId } from "@/api/outletApi";
 
 import {
   BellRing,
@@ -118,7 +119,7 @@ const ItemLibrary = () => {
 
   const { data: myOutlet } = useQuery({
     queryKey: ["outlet", userInfo?._id],
-    queryFn: () => getOutletByUserId(userInfo?._id),
+    queryFn: () => getOuletByUserId(userInfo?._id),
     enabled: !!userInfo?._id,
   });
 

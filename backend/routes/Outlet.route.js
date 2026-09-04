@@ -191,9 +191,14 @@ router.get("/getOutlet/:userId", async (req, res) => {
     });
   }
   try {
-    const outletDB = await Outlet.findOne({ kasirList: userId }).select(
-      "-logo", //jangan bawa logo, buat api baru spesial aja, endpoint ini banyak dipakai biar ga berat
-    );
+    const user = await UserRefrensi.findById(userId).select("currentOutlet");
+    let outletDB = null;
+    if (user?.currentOutlet) {
+      outletDB = await Outlet.findById(user.currentOutlet).select("-logo");
+    }
+    if (!outletDB) {
+      outletDB = await Outlet.findOne({ kasirList: userId }).select("-logo");
+    }
     if (!outletDB) {
       return res
         .status(404)

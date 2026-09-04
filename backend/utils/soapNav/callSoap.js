@@ -78,7 +78,10 @@ export const callSoapNav = async ({
 
 export const extractXmlTagValue = (xml, tagName) => {
   if (!xml || !tagName) return null;
-  const regex = new RegExp(`<(?:\\w+:)?${tagName}[^>]*>([^<]*)</(?:\\w+:)?${tagName}>`, "i");
+  const regex = new RegExp(
+    `<(?:\\w+:)?${tagName}[^>]*>([^<]*)</(?:\\w+:)?${tagName}>`,
+    "i",
+  );
   const match = xml.match(regex);
   return match?.[1]?.trim() ?? null;
 };

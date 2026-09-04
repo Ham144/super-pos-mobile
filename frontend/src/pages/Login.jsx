@@ -55,8 +55,8 @@ export default function Login({ className, ...props }) {
       err?.response?.data?.message ||
         "Login gagal. Periksa username dan password Anda.",
     );
-  };
-
+  }
+  
   // Verifikasi sesi via cookie saat komponen dimuat
   useEffect(() => {
     const verifyToken = async () => {
