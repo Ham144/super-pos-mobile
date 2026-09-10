@@ -2,12 +2,9 @@ import mongoose from "mongoose";
 
 const InventoryRefrensiSchema = new mongoose.Schema(
   {
-    _id: {
-      type: String, //ini` SKU
-    },
     sku: {
-      type: String, //ini sku jg, ribet mengganti semua keyword sku jadi _id kodingan lama
-      required: true
+      type: String,
+      required: true,
     },
     isDisabled: {
       type: Boolean,
@@ -38,19 +35,21 @@ const InventoryRefrensiSchema = new mongoose.Schema(
     },
     outlet: {
       type: mongoose.Schema.Types.ObjectId,
-      required: true
-    }
-    //memeriksa perubahan yang dilakukan cms(mengurangi response size)
+      ref: "Outlet",
+      required: true,
+    },
   },
   {
     timestamps: true,
-  }
+  },
 );
 
-InventoryRefrensiSchema.index({sku : 1, outlet: 1})
+// SKU unik per outlet (bukan global)
+InventoryRefrensiSchema.index({ sku: 1, outlet: 1 }, { unique: true });
+
 const InventoryRefrensi = mongoose.model(
   "InventoryRefrensi",
-  InventoryRefrensiSchema
+  InventoryRefrensiSchema,
 );
 
 export default InventoryRefrensi;

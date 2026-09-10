@@ -4,11 +4,7 @@ import { deleteKasir } from "../api/kasirApi";
 import { toast } from "react-hot-toast";
 import { deleteSpg, editSpg, getAllSpg } from "../api/spgApi";
 import ModalNewAccount from "@/components/ModalNewAccount";
-import {
-  getOuletList,
-  assignUserToOutlet,
-  getSimpleOuletList,
-} from "../api/outletApi";
+import { getOuletList } from "../api/outletApi";
 import { getAllAccount, updateUser } from "@/api/authApi";
 import { mockBackend, mockPages } from "@/api/constant";
 import {
@@ -44,6 +40,13 @@ const AllAccounts = () => {
   const [uniqueRoles, setUniqueRoles] = useState([]);
   const [showPassword, setShowPassword] = useState(false);
 
+  const closeEditModal = () => {
+    document.getElementById("modalEditAccount")?.close();
+    setShowEditForm(false);
+    setSelectedUser(null);
+    setShowPassword(false);
+  };
+
   const queryClient = useQueryClient();
   const { data: spgList } = useQuery({
     queryFn: getAllSpg,
@@ -51,8 +54,8 @@ const AllAccounts = () => {
   });
 
   const { data: outletList } = useQuery({
-    queryFn: getSimpleOuletList,
-    queryKey: ["simpleOutletList"],
+    queryFn: getOuletList,
+    queryKey: ["outlet"],
   });
 
   const { mutateAsync: handleUpdateSpg } = useMutation({
@@ -71,8 +74,7 @@ const AllAccounts = () => {
     onSuccess: () => {
       queryClient.invalidateQueries("spg");
       toast.success("Account updated successfully!");
-      setSelectedUser(null);
-      setShowEditForm(false);
+      closeEditModal();
     },
   });
   const { data: userList } = useQuery({
@@ -84,9 +86,9 @@ const AllAccounts = () => {
     mutationFn: (userId) => deleteKasir(userId),
     mutationKey: ["kasir", "user"],
     onSuccess: () => {
-      setSelectedUser(null);
       queryClient.invalidateQueries("kasir");
       toast.success("Account deleted successfully!");
+      closeEditModal();
     },
     onError: (err) => {
       toast(err?.response?.data?.message || err.message);
@@ -94,11 +96,14 @@ const AllAccounts = () => {
   });
 
   const { mutateAsync: handleUpdateUser } = useMutation({
-    mutationFn: () => updateUser(selectedUser),
+    mutationFn: () =>
+      updateUser({
+        ...selectedUser,
+        currentOutlet: getCurrentOutletId(selectedUser?.currentOutlet),
+      }),
     onSuccess: () => {
-      queryClient.invalidateQueries(["kasir", "user"]);
-      setShowEditForm(false);
-      setSelectedUser(null);
+      queryClient.invalidateQueries(["kasir", "user", "outlet"]);
+      closeEditModal();
       toast.success("Edited successfully!");
     },
     onError: (err) => {
@@ -115,57 +120,66 @@ const AllAccounts = () => {
     onSuccess: (res) => {
       queryClient.invalidateQueries(["spg"]);
       toast.success(res?.response?.data?.message || res.message);
-      setSelectedUser(null);
-      setShowEditForm(false);
+      closeEditModal();
     },
   });
 
-  const { mutateAsync: handleAssignOutlet } = useMutation({
-    mutationFn: ({ userId, outletId }) => assignUserToOutlet(userId, outletId),
-    onSuccess: () => {
-      queryClient.invalidateQueries(["outlet"]);
-      toast.success("User assigned to outlet successfully");
-    },
-    onError: (err) => {
-      toast.error(
-        err?.response?.data?.message || "Failed to assign user to outlet",
-      );
-    },
-  });
-
-  const findOutletForUser = (userId, outletList) => {
-    if (!outletList || !userId) return null;
-
-    const outlet = outletList.find(
-      (outlet) => outlet.kasirList && outlet.kasirList.includes(userId),
+  const findOutletsForUser = (userId, outlets) => {
+    if (!outlets || !userId) return [];
+    return outlets.filter((outlet) =>
+      (outlet.kasirList || []).some((kasir) => {
+        const kasirId =
+          typeof kasir === "object" && kasir ? kasir._id : kasir;
+        return String(kasirId) === String(userId);
+      }),
     );
-
-    return outlet || null;
   };
 
+  const findOutletForUser = (userId, outlets) => {
+    const matches = findOutletsForUser(userId, outlets);
+    return matches[0] || null;
+  };
+
+  const getCurrentOutletId = (currentOutlet) => {
+    if (!currentOutlet) return "";
+    return typeof currentOutlet === "object"
+      ? currentOutlet._id?.toString() || ""
+      : currentOutlet.toString();
+  };
+
+  const selectedUserAuthorizedOutlets = findOutletsForUser(
+    selectedUser?._id,
+    outletList?.data || [],
+  );
+
   const handleEditClick = (user) => {
-    setSelectedUser(null);
+    const userOutlets = findOutletsForUser(user._id, outletList?.data || []);
+    const currentOutletId = getCurrentOutletId(user?.currentOutlet);
+    const matchedCurrent =
+      userOutlets.find((o) => String(o._id) === String(currentOutletId)) ||
+      userOutlets[0] ||
+      null;
 
-    setTimeout(() => {
-      const userOutlet = findOutletForUser(user._id, outletList?.data || []);
-
-      setSelectedUser({
-        _id: user._id,
-        username: user?.username || user?.name,
-        password: "",
-        email: user?.email || "",
-        telepon: user?.telepon || "",
-        targetHargaPenjualan: user?.targetHargaPenjualan || 0,
-        targetQuantityPenjualan: user?.targetQuantityPenjualan || 0,
-        outlet: userOutlet ? userOutlet._id : "",
-        roleName: user?.roleName || "",
-        blockedAccess: user?.blockedAccess || [],
-        type: user?.type == "SPG" ? "SPG" : user?.roleName,
-        kodeKasir: user?.kodeKasir || "",
-        isDisabled: user?.isDisabled || false,
-      });
-    }, 0);
+    setSelectedUser({
+      _id: user._id,
+      username: user?.username || user?.name,
+      password: "",
+      email: user?.email || "",
+      telepon: user?.telepon || "",
+      targetHargaPenjualan: user?.targetHargaPenjualan || 0,
+      targetQuantityPenjualan: user?.targetQuantityPenjualan || 0,
+      outlet: matchedCurrent?._id || "",
+      roleName: user?.roleName || "",
+      blockedAccess: user?.blockedAccess || [],
+      type: user?.type == "SPG" ? "SPG" : user?.roleName,
+      kodeKasir: user?.kodeKasir || "",
+      isDisabled: user?.isDisabled || false,
+      currentOutlet: matchedCurrent?._id || "",
+    });
     setShowEditForm(true);
+    requestAnimationFrame(() => {
+      document.getElementById("modalEditAccount")?.showModal();
+    });
   };
 
   const handleDownloadAsCsv = () => {
@@ -301,11 +315,7 @@ const AllAccounts = () => {
       {/* Main Content */}
       <div className="flex flex-1 w-full gap-6">
         {/* Table Section */}
-        <div
-          className={`flex-1 transition-all duration-300 ${
-            showEditForm && selectedUser ? "lg:w-[calc(100%-432px)]" : "w-full"
-          }`}
-        >
+        <div className="flex-1 w-full">
           <div className="bg-white rounded-2xl shadow-xl border border-blue-100 overflow-hidden">
             {/* Table Header */}
             <div className="p-4 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-white">
@@ -314,8 +324,7 @@ const AllAccounts = () => {
                   {/* New Account Button */}
                   <button
                     onClick={() => {
-                      setShowEditForm(false);
-                      setSelectedUser(null);
+                      closeEditModal();
                       document.getElementById("newAccount").showModal();
                     }}
                     className="btn bg-gradient-to-r from-blue-600 to-blue-700 text-white border-0 hover:from-blue-700 hover:to-blue-800 shadow-lg shadow-blue-950/25"
@@ -460,10 +469,17 @@ const AllAccounts = () => {
                       </td>
                       <td className="px-4 py-3 text-center">
                         {(() => {
-                          const outlet = findOutletForUser(
+                          const currentId = getCurrentOutletId(
+                            user.currentOutlet,
+                          );
+                          const current = (outletList?.data || []).find(
+                            (o) => String(o._id) === String(currentId),
+                          );
+                          const fallback = findOutletForUser(
                             user._id,
                             outletList?.data || [],
                           );
+                          const outlet = current || fallback;
                           return outlet ? (
                             <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded-md text-xs">
                               {outlet.namaOutlet}
@@ -503,204 +519,221 @@ const AllAccounts = () => {
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Edit Form Section */}
-        {showEditForm && selectedUser && (
-          <div className="w-[400px]">
-            <div className="bg-white rounded-2xl shadow-xl border border-blue-100 overflow-hidden sticky top-4">
-              {/* Form Header */}
-              <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4">
-                <div className="flex items-center gap-2">
-                  <Edit className="w-5 h-5 text-white" />
-                  <h2 className="text-lg font-semibold text-white">
-                    Edit User
-                  </h2>
-                </div>
-              </div>
+      {/* Edit User Modal */}
+      <dialog id="modalEditAccount" className="modal">
+        <div className="modal-box w-11/12 max-w-2xl max-h-[90vh] p-0 overflow-hidden flex flex-col">
+          <div className="px-6 py-4 border-b bg-gradient-to-r from-blue-600 to-blue-700 text-white flex items-center justify-between shrink-0">
+            <div>
+              <h3 className="font-bold text-lg flex items-center gap-2">
+                <Edit className="w-5 h-5" />
+                Edit User
+              </h3>
+              <p className="text-blue-100 text-sm mt-0.5">
+                {selectedUser?.username || "—"}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn btn-sm btn-circle btn-ghost text-white"
+              onClick={closeEditModal}
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
 
-              {/* Form Actions */}
-              <div className="p-4 border-b border-gray-100 bg-gray-50">
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowEditForm(false)}
-                    className="flex flex-col items-center p-2 rounded-xl border-2 border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors"
-                  >
-                    <X className="w-5 h-5 mb-1" />
-                    <span className="text-xs font-medium">Batal</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const confirmDelete = window.confirm(
-                        `Apakah Anda yakin ingin menghapus ${selectedUser.username}?`,
-                      );
-                      if (confirmDelete) {
-                        if (selectedUser.type == "SPG") {
-                          handleDeleteSpg(selectedUser._id);
-                        } else {
-                          handleDeleteUserKasir(selectedUser._id);
-                        }
+          {selectedUser && (
+            <>
+              <div className="px-6 py-3 border-b bg-gray-50 flex gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={closeEditModal}
+                  className="btn btn-ghost flex-1"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const confirmDelete = window.confirm(
+                      `Apakah Anda yakin ingin menghapus ${selectedUser.username}?`,
+                    );
+                    if (confirmDelete) {
+                      if (selectedUser.type == "SPG") {
+                        handleDeleteSpg(selectedUser._id);
+                      } else {
+                        handleDeleteUserKasir(selectedUser._id);
                       }
-                    }}
-                    className={`flex flex-col items-center p-2 rounded-xl border-2 border-red-200 text-white hover:bg-red-50 transition-colors ${selectedUser?.isDisabled ? "bg-green-500 text-white" : "bg-red-500 text-white"}`}
-                  >
-                    {selectedUser?.isDisabled ? (
-                      <ShieldCheck className="w-5 h-5 mb-1" />
-                    ) : (
-                      <Ban className="w-5 h-5 mb-1" />
-                    )}
-                    <span className="text-xs font-medium">
-                      {selectedUser?.isDisabled ? "Enable" : "Disable"}
-                    </span>
-                  </button>
-                  <button
-                    type="submit"
-                    form="editUserForm"
-                    className="flex flex-col items-center p-2 rounded-xl border-2 border-green-200 text-green-600 hover:bg-green-50 transition-colors"
-                  >
-                    <Save className="w-5 h-5 mb-1" />
-                    <span className="text-xs font-medium">Simpan</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Form Fields */}
-              <div className="p-6 max-h-[600px] overflow-y-auto">
-                <form
-                  id="editUserForm"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    if (selectedUser.type == "SPG") {
-                      handleUpdateSpg();
-                    } else {
-                      handleUpdateUser();
                     }
                   }}
-                  className="space-y-4"
+                  className={`btn flex-1 ${
+                    selectedUser?.isDisabled
+                      ? "btn-success btn-outline"
+                      : "btn-error btn-outline"
+                  }`}
                 >
-                  {/* Username (Disabled) */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                      <Shield className="w-4 h-4 text-blue-950" />
-                      Username
-                      <div
-                        className="tooltip tooltip-bottom"
-                        data-tip="Maaf. Tidak boleh diubah, sudah terlanjur penghubung (FK) antar Invoice"
-                      >
-                        <ShieldQuestion className="w-4 h-4 text-gray-400" />
-                      </div>
-                    </label>
-                    <input
-                      type="text"
-                      disabled
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-50 text-gray-500"
-                      value={selectedUser.username || ""}
-                    />
-                  </div>
+                  {selectedUser?.isDisabled ? (
+                    <>
+                      <ShieldCheck className="w-4 h-4" />
+                      Enable
+                    </>
+                  ) : (
+                    <>
+                      <Ban className="w-4 h-4" />
+                      Hapus Akun
+                    </>
+                  )}
+                </button>
+                <button
+                  type="submit"
+                  form="editUserForm"
+                  className="btn btn-primary flex-1"
+                >
+                  <Save className="w-4 h-4" />
+                  Simpan
+                </button>
+              </div>
 
-                  {/* Kode Kasir */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                      <Key className="w-4 h-4 text-blue-950" />
-                      Kode Kasir
-                      <span className="badge badge-info text-xs">
-                        Max 3 karakter
-                      </span>
-                    </label>
+              <form
+                id="editUserForm"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (selectedUser.type == "SPG") {
+                    handleUpdateSpg();
+                  } else {
+                    handleUpdateUser();
+                  }
+                }}
+                className="overflow-y-auto flex-1 px-6 py-4 space-y-4"
+              >
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-blue-950" />
+                    Username
+                    <div
+                      className="tooltip tooltip-bottom"
+                      data-tip="Maaf. Tidak boleh diubah, sudah terlanjur penghubung (FK) antar Invoice"
+                    >
+                      <ShieldQuestion className="w-4 h-4 text-gray-400" />
+                    </div>
+                  </label>
+                  <input
+                    type="text"
+                    disabled
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-50 text-gray-500"
+                    value={selectedUser.username || ""}
+                  />
+                </div>
+
+{/* 3 karakter Kode Kasir */}
+                {selectedUser.type !== "SPG" && (
+                   <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                    <Key className="w-4 h-4 text-blue-950" />
+                    Kode Kasir
+                    <span className="badge badge-info text-xs">
+                      Max 3 karakter
+                    </span>
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={3}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-200 focus:border-blue-950 transition-all duration-200 uppercase"
+                    value={selectedUser.kodeKasir || ""}
+                    onChange={(e) =>
+                      setSelectedUser((prev) => ({
+                        ...prev,
+                        kodeKasir: e.target.value.toUpperCase(),
+                      }))
+                    }
+                    placeholder="Contoh: ADM"
+                  />
+                  <p className="text-xs text-gray-500">
+                    Kode ini muncul dalam kode invoice dan harus unik (3
+                    karakter)
+                  </p>
+                </div>)}
+
+{/* Password */}
+            {selectedUser.type !== "SPG" && (
+              <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                    <Lock className="w-4 h-4 text-blue-950" />
+                    Password
+                  </label>
+                  <div className="relative">
                     <input
-                      type="text"
-                      maxLength={3}
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-200 focus:border-blue-950 transition-all duration-200 uppercase"
-                      value={selectedUser.kodeKasir || ""}
+                      type={showPassword ? "text" : "password"}
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-200 focus:border-blue-950 transition-all duration-200"
+                      value={selectedUser.password || ""}
                       onChange={(e) =>
                         setSelectedUser((prev) => ({
                           ...prev,
-                          kodeKasir: e.target.value.toUpperCase(),
+                          password: e.target.value,
                         }))
                       }
-                      placeholder="Contoh: ADM"
+                      placeholder="Biarkan kosong jika tidak diubah"
                     />
-                    <p className="text-xs text-gray-500">
-                      Kode ini muncul dalam kode invoice dan harus unik (3
-                      karakter)
-                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2"
+                    >
+                      {showPassword ? (
+                        <EyeOff className="w-4 h-4 text-gray-400" />
+                      ) : (
+                        <Eye className="w-4 h-4 text-gray-400" />
+                      )}
+                    </button>
                   </div>
+                </div>
+)}
 
-                  {/* Password */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                      <Lock className="w-4 h-4 text-blue-950" />
-                      Password
-                    </label>
-                    <div className="relative">
+{/* Email */}
+{                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                        <Mail className="w-4 h-4 text-blue-950" />
+                        Email
+                      </label>
                       <input
-                        type={showPassword ? "text" : "password"}
+                        type="email"
                         className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-200 focus:border-blue-950 transition-all duration-200"
-                        value={selectedUser.password || ""}
+                        value={selectedUser.email || ""}
                         onChange={(e) =>
                           setSelectedUser((prev) => ({
                             ...prev,
-                            password: e.target.value,
+                            email: e.target.value,
                           }))
                         }
-                        placeholder="Biarkan kosong jika tidak diubah"
+                        placeholder="user@example.com"
                       />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2"
-                      >
-                        {showPassword ? (
-                          <EyeOff className="w-4 h-4 text-gray-400" />
-                        ) : (
-                          <Eye className="w-4 h-4 text-gray-400" />
-                        )}
-                      </button>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                        <Phone className="w-4 h-4 text-blue-950" />
+                        Telepon
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-200 focus:border-blue-950 transition-all duration-200"
+                        value={selectedUser.telepon || ""}
+                        onChange={(e) =>
+                          setSelectedUser((prev) => ({
+                            ...prev,
+                            telepon: e.target.value,
+                          }))
+                        }
+                        placeholder="08123456789"
+                      />
                     </div>
                   </div>
+}
+{/* Target Harga Penjualan dan Target Quantity Penjualan */}
 
-                  {/* Email */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                      <Mail className="w-4 h-4 text-blue-950" />
-                      Email
-                    </label>
-                    <input
-                      type="email"
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-200 focus:border-blue-950 transition-all duration-200"
-                      value={selectedUser.email || ""}
-                      onChange={(e) =>
-                        setSelectedUser((prev) => ({
-                          ...prev,
-                          email: e.target.value,
-                        }))
-                      }
-                      placeholder="user@example.com"
-                    />
-                  </div>
-
-                  {/* Telepon */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                      <Phone className="w-4 h-4 text-blue-950" />
-                      Telepon
-                    </label>
-                    <input
-                      type="text"
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-200 focus:border-blue-950 transition-all duration-200"
-                      value={selectedUser.telepon || ""}
-                      onChange={(e) =>
-                        setSelectedUser((prev) => ({
-                          ...prev,
-                          telepon: e.target.value,
-                        }))
-                      }
-                      placeholder="08123456789"
-                    />
-                  </div>
-
-                  {/* Target Harga */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
                       <Target className="w-4 h-4 text-blue-950" />
@@ -720,7 +753,6 @@ const AllAccounts = () => {
                     />
                   </div>
 
-                  {/* Target Quantity */}
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
                       <Target className="w-4 h-4 text-blue-950" />
@@ -740,140 +772,148 @@ const AllAccounts = () => {
                       placeholder="0"
                     />
                   </div>
+                </div>
 
-                  {/* Outlet */}
-                  <div className="space-y-2">
+         {selectedUser.type !== "SPG" && (
+                   <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
                     <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
                       <Store className="w-4 h-4 text-blue-950" />
-                      Outlet
+                      Current Login Outlet
                     </label>
-                    <select
-                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-200 focus:border-blue-950 transition-all duration-200 appearance-none bg-white"
-                      value={selectedUser.outlet || ""}
-                      onChange={(e) => {
-                        const newOutletId = e.target.value;
-                        setSelectedUser((prev) => ({
-                          ...prev,
-                          outlet: newOutletId,
-                        }));
-
-                        if (selectedUser._id) {
-                          handleAssignOutlet({
-                            userId: selectedUser._id,
-                            outletId: newOutletId,
-                          });
-                        }
-                      }}
-                    >
-                      <option value="">Pilih Outlet</option>
-                      {outletList?.data?.map((outlet) => (
-                        <option key={outlet._id} value={outlet._id}>
-                          {outlet.namaOutlet}
-                        </option>
-                      ))}
-                    </select>
+                    <a href="/outlet_list" className="text-blue-500 text-sm">
+                      Manage Authorized Outlet For This User
+                    </a>
                   </div>
-
-                  {/* Role Name (for non-SPG) */}
-                  {selectedUser?.type !== "SPG" && (
-                    <>
-                      <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                          <Shield className="w-4 h-4 text-blue-950" />
-                          Role Name
-                        </label>
-                        <input
-                          type="text"
-                          className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-200 focus:border-blue-950 transition-all duration-200 uppercase"
-                          value={selectedUser.roleName?.toUpperCase() || ""}
-                          onChange={(e) =>
-                            setSelectedUser((prev) => ({
-                              ...prev,
-                              roleName: e.target.value.toUpperCase(),
-                            }))
-                          }
-                          placeholder="ADMIN / MANAGER / KASIR"
-                        />
-                      </div>
-
-                      {/* Blocked Access Sections */}
-                      <div className="space-y-4 pt-2">
-                        <div className="bg-gradient-to-r from-blue-50 to-white rounded-xl p-4 border border-blue-100">
-                          <h3 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
-                            <Lock className="w-4 h-4 text-blue-950" />
-                            Blocked Access By Page
-                          </h3>
-                          <div className="space-y-2 max-h-48 overflow-y-auto">
-                            {mockPages.map((page) => (
-                              <div
-                                key={page.originalPath}
-                                className="flex items-start gap-3 p-2 bg-white rounded-lg hover:bg-blue-50 transition-colors"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={selectedUser.blockedAccess?.includes(
-                                    page.originalPath,
-                                  )}
-                                  onChange={() =>
-                                    toggleBlockedAccess(page.originalPath)
-                                  }
-                                  className="checkbox checkbox-primary checkbox-sm mt-1"
-                                />
-                                <div className="flex-1">
-                                  <p className="text-xs font-medium text-gray-800">
-                                    {page.originalPath}
-                                  </p>
-                                  <p className="text-xs text-gray-500">
-                                    {page.description}
-                                  </p>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div className="bg-gradient-to-r from-purple-50 to-white rounded-xl p-4 border border-purple-100">
-                          <h3 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
-                            <Lock className="w-4 h-4 text-purple-500" />
-                            Blocked Access By API
-                          </h3>
-                          <div className="space-y-2 max-h-48 overflow-y-auto">
-                            {mockBackend.map((api) => (
-                              <div
-                                key={api.originalPath}
-                                className="flex items-start gap-3 p-2 bg-white rounded-lg hover:bg-purple-50 transition-colors"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={selectedUser.blockedAccess?.includes(
-                                    api.originalPath,
-                                  )}
-                                  onChange={() =>
-                                    toggleBlockedAccess(api.originalPath)
-                                  }
-                                  className="checkbox checkbox-primary checkbox-sm mt-1"
-                                />
-                                <div className="flex-1">
-                                  <p className="text-xs font-medium text-gray-800">
-                                    {api.originalPath}
-                                  </p>
-                                  <p className="text-xs text-gray-500">
-                                    {api.description}
-                                  </p>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </>
+                  <select
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-200 focus:border-blue-950 transition-all duration-200 appearance-none bg-white"
+                    value={getCurrentOutletId(selectedUser.currentOutlet)}
+                    onChange={(e) => {
+                      const newOutletId = e.target.value;
+                      setSelectedUser((prev) => ({
+                        ...prev,
+                        currentOutlet: newOutletId,
+                        outlet: newOutletId,
+                      }));
+                    }}
+                  >
+                    <option value="">Pilih Outlet</option>
+                    {selectedUserAuthorizedOutlets.map((outlet) => (
+                      <option key={outlet._id} value={outlet._id}>
+                        {outlet.namaOutlet}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedUserAuthorizedOutlets.length === 0 && (
+                    <p className="text-xs text-amber-600">
+                      User ini belum punya outlet di kasirList. Assign dulu lewat
+                      halaman outlet.
+                    </p>
                   )}
-                </form>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+                </div>)}
+
+                {selectedUser?.type !== "SPG" && (
+                  <>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                        <Shield className="w-4 h-4 text-blue-950" />
+                        Role Name
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-200 focus:border-blue-950 transition-all duration-200 uppercase"
+                        value={selectedUser.roleName?.toUpperCase() || ""}
+                        onChange={(e) =>
+                          setSelectedUser((prev) => ({
+                            ...prev,
+                            roleName: e.target.value.toUpperCase(),
+                          }))
+                        }
+                        placeholder="ADMIN / MANAGER / KASIR"
+                      />
+                    </div>
+
+                    <div className="space-y-4 pt-2">
+                      <div className="bg-gradient-to-r from-blue-50 to-white rounded-xl p-4 border border-blue-100">
+                        <h3 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                          <Lock className="w-4 h-4 text-blue-950" />
+                          Blocked Access By Page
+                        </h3>
+                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                          {mockPages.map((page) => (
+                            <div
+                              key={page.originalPath}
+                              className="flex items-start gap-3 p-2 bg-white rounded-lg hover:bg-blue-50 transition-colors"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedUser.blockedAccess?.includes(
+                                  page.originalPath,
+                                )}
+                                onChange={() =>
+                                  toggleBlockedAccess(page.originalPath)
+                                }
+                                className="checkbox checkbox-primary checkbox-sm mt-1"
+                              />
+                              <div className="flex-1">
+                                <p className="text-xs font-medium text-gray-800">
+                                  {page.originalPath}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {page.description}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="bg-gradient-to-r from-purple-50 to-white rounded-xl p-4 border border-purple-100">
+                        <h3 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                          <Lock className="w-4 h-4 text-purple-500" />
+                          Blocked Access By API
+                        </h3>
+                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                          {mockBackend.map((api) => (
+                            <div
+                              key={api.originalPath}
+                              className="flex items-start gap-3 p-2 bg-white rounded-lg hover:bg-purple-50 transition-colors"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedUser.blockedAccess?.includes(
+                                  api.originalPath,
+                                )}
+                                onChange={() =>
+                                  toggleBlockedAccess(api.originalPath)
+                                }
+                                className="checkbox checkbox-primary checkbox-sm mt-1"
+                              />
+                              <div className="flex-1">
+                                <p className="text-xs font-medium text-gray-800">
+                                  {api.originalPath}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  {api.description}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </form>
+            </>
+          )}
+        </div>
+        <form method="dialog" className="modal-backdrop">
+          <button type="submit" onClick={closeEditModal}>
+            close
+          </button>
+        </form>
+      </dialog>
 
       {/* Modals */}
       <ModalNewAccount id="newAccount" />

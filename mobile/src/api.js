@@ -299,11 +299,23 @@ export const initializePaymentMethod = async () => {
   return response?.data;
 };
 
-//untuk mengambil data inventories untuk pertama kali karena tidak ada satupun di AsyncStorage
-export const getAllInventoriesOnlineInitial = async (page = 1, limit = 50) => {
+// Ambil halaman inventory dari InventoryRefrensi (bukan SOAP).
+// offline: dipakai dump awal ke AsyncStorage
+// stateless: dipakai live/partial di LibrariesScreen
+export const getAllInventoriesOnlineInitial = async (
+  page = 1,
+  limit = 50,
+  searchKey = "",
+) => {
   const token = await AsyncStorage.getItem("token");
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+  });
+  if (searchKey) params.set("searchKey", searchKey);
+  
   const response = await axios.get(
-    `${await getBaseUrl()}/api/v1/inventories/getAllinventoriesMobile?page=${page}&limit=${limit}`,
+    `${await getBaseUrl()}/api/v1/inventories/getAllinventoriesMobile?${params.toString()}`,
     {
       headers: {
         mobile: `Bearer ${token}`,
@@ -655,7 +667,15 @@ export const syncDiskonPromoVoucherInventories = async (isOnline) => {
     }
 
     //jika tidak ada inventories di AsyncStorage maka ambil dari BE
-    if (!inventoriesOffline?.length || !inventoriesOffline) {
+    // outlet.mode=stateless: jangan dump ke AsyncStorage — fetch partial langsung dari InventoryRefrensi
+    const outletForMode = updatedOutlet || data.newOutletData;
+    if (outletForMode?.mode === "stateless") {
+      await AsyncStorage.setItem("inventories", JSON.stringify([]));
+      data.newInventoryData = [];
+      console.log(
+        "Stateless outlet: skip inventory AsyncStorage dump (live fetch) ✅",
+      );
+    } else if (!inventoriesOffline?.length || !inventoriesOffline) {
       let currentPage = 1;
       let hasMorePages = true;
       const ITEMS_PER_PAGE = 50;

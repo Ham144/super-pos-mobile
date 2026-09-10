@@ -27,7 +27,6 @@ import ReportList from "./pages/ReportList";
 import PaymentMethod from "./pages/PaymentMethod";
 import Printer from "./pages/Printer";
 import Invoices from "./pages/Invoices";
-import SumberThirdParty from "./pages/SumberThirdParty";
 import SaleReport from "./pages/SalesReport";
 import EmailConfig from "./pages/EmailConfig";
 import KwitansiPembayaranTertunda from "./pages/KwitansiPembayaranTertunda";
@@ -76,7 +75,6 @@ const router = createBrowserRouter(
         <Route path="/spg_reference" element={<SpgReference />} />
         <Route path="/spg_list" element={<SpgReference />} />
         <Route path="/invoices" element={<Invoices />} />
-        <Route path="/sumber_thirdparty" element={<SumberThirdParty />} />
         <Route path="/sales_report" element={<SaleReport />} />
         <Route path="/email_config" element={<EmailConfig />} />
         <Route path="/about" element={<About />} />

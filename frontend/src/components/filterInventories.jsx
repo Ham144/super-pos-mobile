@@ -1,47 +1,27 @@
-import React, { useEffect, useState, useRef, useCallback } from "react";
-import { Delete, Info, Package } from "lucide-react";
+import React, { useState, useRef, useCallback } from "react";
 import { useFilter, useUserInfo } from "../store";
 import { useQuery } from "@tanstack/react-query";
 import { getOuletByUserId } from "../api/outletApi";
 import ModalFilterByBrand from "./ModalFilterByBrand";
 import { getAllBrands } from "@/api/brandApi";
 
-// Style untuk efek shimmer
-const shimmerAnimationStyle = `
-  @keyframes shimmer {
-    0% {
-      transform: translateX(-150%);
-    }
-    50% {
-      transform: translateX(150%);
-    }
-    100% {
-      transform: translateX(150%);
-    }
-  }
-  .animate-shimmer {
-    animation: shimmer 2s ease-in-out infinite;
-  }
-  
-  .shimmer-effect {
-    background: linear-gradient(
-      90deg,
-      rgba(255,255,255,0) 0%,
-      rgba(255,255,255,0.6) 50%,
-      rgba(255,255,255,0) 100%
-    );
-    box-shadow: 0 0 10px 10px rgba(255,255,255,0.3);
-    height: 100%;
-    width: 60%;
-  }
-`;
+
+import {
+  Search,
+  X,
+  SlidersHorizontal,
+  Loader2,
+  Calendar,
+  Package,
+  Info,
+  RotateCcw,
+  Check,
+} from "lucide-react";
 
 const FilterInventories = ({ onChange }) => {
   const { userInfo } = useUserInfo();
-
   const { setFilter: setFilterZustand } = useFilter();
 
-  //tanstack
   const { data: myOutlet } = useQuery({
     queryKey: ["outlet", userInfo?._id],
     queryFn: () => getOuletByUserId(userInfo?._id),
@@ -61,7 +41,7 @@ const FilterInventories = ({ onChange }) => {
     asc: true,
     searchKey: "",
     page: 1,
-    brandIds: myOutlet?.data?.brandIds || [],
+    brandIds: [],
     requiredQuantity: false,
     requiredRpHargaDasar: false,
     requiredBarcodeItem: false,
@@ -69,28 +49,24 @@ const FilterInventories = ({ onChange }) => {
 
   const [filter, setFilter] = useState(initialFilter);
   const [expanded, setExpanded] = useState(false);
-  const [isDebouncing, setIsDebouncing] = useState(false); // Track debouncing state
+  const [isDebouncing, setIsDebouncing] = useState(false);
   const formRef = useRef(null);
   const debounceTimerRef = useRef(null);
 
-  // Debounced function for searchKey updates
   const debouncedUpdateFilter = useCallback(
     (updatedFilter) => {
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
       }
-
-      // Set debouncing state to true to show the loading animation
       setIsDebouncing(true);
 
       debounceTimerRef.current = setTimeout(() => {
         setFilter(updatedFilter);
         if (onChange) onChange(updatedFilter);
-        // Reset debouncing state after updating the filter
         setIsDebouncing(false);
-      }, 500); // 500ms debounce delay
+      }, 500);
     },
-    [onChange, setFilter],
+    [onChange]
   );
 
   const handleChange = (e) => {
@@ -104,30 +80,27 @@ const FilterInventories = ({ onChange }) => {
 
     setFilter(updatedFilter);
 
-    // If it's a search input, use debounced update
     if (name === "searchKey") {
       debouncedUpdateFilter(updatedFilter);
     }
   };
 
   const handleConfirmBrandFilter = (temporarySelected) => {
-    setFilter({
+    const updatedFilter = {
       ...filter,
       brandIds: temporarySelected,
-    });
+    };
+    setFilter(updatedFilter);
     if (onChange) onChange(updatedFilter);
   };
 
   const handleSubmit = (e) => {
     if (e) e.preventDefault();
-
-    // Hentikan debouncing yang sedang berjalan jika ada
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
       setIsDebouncing(false);
     }
 
-    // Reset page dan skip saat filter berubah
     const updatedFilter = {
       ...filter,
       page: 1,
@@ -138,7 +111,6 @@ const FilterInventories = ({ onChange }) => {
   };
 
   const handleResetSearch = () => {
-    // Hentikan debouncing yang sedang berjalan jika ada
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
       setIsDebouncing(false);
@@ -150,7 +122,6 @@ const FilterInventories = ({ onChange }) => {
   };
 
   const handleResetFilter = () => {
-    // Hentikan debouncing yang sedang berjalan jika ada
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
       setIsDebouncing(false);
@@ -158,351 +129,274 @@ const FilterInventories = ({ onChange }) => {
 
     const resetState = {
       ...initialFilter,
+      brandIds: [],
       page: 1,
       skip: 0,
     };
     setFilter(resetState);
     setExpanded(false);
+    if (onChange) onChange(resetState);
   };
 
-  useEffect(() => {
-    setFilter({
-      ...filter,
-      brandIds: myOutlet?.data?.brandIds || [],
-    });
-  }, [myOutlet]);
-
   return (
-    <form className="w-full  overflow-y-auto  " onSubmit={handleSubmit}>
-      {/* Style untuk animasi shimmer */}
-      <style dangerouslySetInnerHTML={{ __html: shimmerAnimationStyle }} />
+    <div className="relative w-full max-w-7xl mx-auto mb-4">
+      {/* Top Main Filter Bar */}
+      <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row items-center gap-3 w-full">
+        {/* Search Input Container */}
+        <div className="relative flex-1 w-full flex items-center bg-white border border-gray-200 rounded-xl shadow-sm focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary transition-all">
+          <div className="pl-3.5 pr-2 text-gray-400 pointer-events-none">
+            {isDebouncing ? (
+              <Loader2 className="w-4 h-4 animate-spin text-primary" />
+            ) : (
+              <Search className="w-4 h-4" />
+            )}
+          </div>
 
-      {/* Search Input Field */}
-      <div className="flex  flex-col gap-2 items-center   ">
-        <div className="flex rounded-md  border-2 w-full">
           <input
             type="text"
             name="searchKey"
             value={filter.searchKey}
-            onSubmit={handleSubmit}
             onChange={handleChange}
-            placeholder="Cari SKU atau description"
-            className="flex-1 relative px-4 py-2 border border-gray-300  text-sm focus:outline-none focus:ring-2 focus:ring-blue-950"
+            placeholder="Cari SKU atau deskripsi produk..."
+            className="w-full py-2.5 bg-transparent text-sm text-gray-900 placeholder-gray-400 focus:outline-none"
           />
-          {/* Efek shimmer hanya ditampilkan saat debouncing */}
-          {isDebouncing && (
-            <div className="absolute inset-0 rounded-lg overflow-hidden pointer-events-none z-0">
-              <div className="animate-shimmer shimmer-effect absolute h-full"></div>
-            </div>
+
+          {filter.searchKey && (
+            <button
+              type="button"
+              onClick={handleResetSearch}
+              className="p-1 mr-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
           )}
 
           <button
-            className={`flex items-center space-x-2 px-4 py-2 bg-gray-500 text-white text-sm font-semibold hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 ${
-              filter.searchKey === "" ? "opacity-50 cursor-not-allowed" : ""
-            }`}
-            onClick={handleResetSearch}
-            type="button"
-            disabled={filter.searchKey === ""}
-          >
-            <Delete className="h-4 w-4" />
-          </button>
-
-          <button
-            className="flex items-center space-x-2 px-4 py-2 bg-primary text-white text-sm font-semibold hover:bg-primary/80 focus:outline-none focus:ring-2 focus:ring-primary"
-            onClick={handleSubmit}
             type="submit"
+            className="h-full px-5 py-2.5 bg-primary text-white text-sm font-medium rounded-r-[11px] hover:bg-primary/90 transition-colors inline-flex items-center gap-1.5"
           >
-            {isDebouncing ? (
-              <div className="animate-spin h-4 w-4 mr-2">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  ></circle>
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  ></path>
-                </svg>
-              </div>
-            ) : (
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-4 w-4 mr-2"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                />
-              </svg>
-            )}
+            Cari
           </button>
         </div>
 
+        {/* Expand Drawer Button */}
         <button
-          onClick={() => setExpanded(!expanded)}
           type="button"
-          className=" py-2 bg-gray-200 text-gray-700 rounded-lg text-sm font-semibold w-full hover:bg-gray-300"
+          onClick={() => setExpanded(!expanded)}
+          className={`h-11 px-4 sm:w-auto w-full inline-flex items-center justify-center gap-2 rounded-xl text-sm font-medium border transition-all ${
+            expanded
+              ? "bg-gray-900 text-white border-gray-900 shadow-sm"
+              : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50 shadow-sm"
+          }`}
         >
-          {expanded ? "Filter" : "Filter"}
+          <SlidersHorizontal className="w-4 h-4" />
+          <span>Filter Lanjutan</span>
+          {filter.brandIds.length > 0 && (
+            <span className="ml-1 px-1.5 py-0.5 text-xs bg-primary/20 text-primary font-semibold rounded-full">
+              {filter.brandIds.length}
+            </span>
+          )}
         </button>
-      </div>
+      </form>
 
-      {/* Expandable Form */}
+      {/* Expanded Filter Panel */}
       {expanded && (
-        <div
-          ref={formRef}
-          className="space-y-4 p-4 bg-white rounded-lg shadow-md fixed max-md:w-full w-[30rem] h-[90vh] pb-32 overflow-y-auto z-30"
-          onSubmit={handleSubmit}
-        >
-          <div className="flex flex-col">
-            <label
-              htmlFor="startDate"
-              className="font-semibold text-gray-700 mb-2 text-sm"
-            >
-              Tanggal terupdate awal:
-            </label>
-            <input
-              id="startDate"
-              type="date"
-              name="startDate"
-              value={filter.startDate}
-              onChange={handleChange}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:bg-secondary"
-            />
-          </div>
+        <>
+          {/* Backdrop for closing */}
+          <div
+            className="fixed inset-0 bg-black/20 z-40 backdrop-blur-[1px]"
+            onClick={() => setExpanded(false)}
+          />
 
-          <div className="flex flex-col">
-            <label
-              htmlFor="endDate"
-              className="font-semibold text-gray-700 mb-2 text-sm"
-            >
-              Tanggal terupdate akhir:
-            </label>
-            <input
-              id="endDate"
-              type="date"
-              name="endDate"
-              value={filter.endDate}
-              onChange={handleChange}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:bg-secondary"
-            />
-          </div>
+          <div
+            ref={formRef}
+            className="absolute right-0 top-14 z-50 w-full sm:w-[42rem] lg:w-[48rem] bg-white rounded-2xl shadow-2xl border border-gray-200 p-6 flex flex-col gap-6"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div>
+                <h3 className="font-semibold text-gray-900 text-base">Filter Lanjutan</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Sesuaikan parameter tanggal, merek, dan data spesifik
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setExpanded(false)}
+                className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
-          <div className="flex flex-col">
-            <label
-              htmlFor="limit"
-              className="font-semibold text-gray-700 mb-2 text-sm"
-            >
-              Limit:
-            </label>
-            <input
-              id="limit"
-              type="number"
-              name="limit"
-              value={filter.limit}
-              min="1"
-              onChange={handleChange}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:bg-secondary"
-            />
-          </div>
+            {/* Inputs Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Tanggal Awal */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-gray-700 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                  Tanggal Terupdate Awal
+                </label>
+                <input
+                  type="date"
+                  name="startDate"
+                  value={filter.startDate}
+                  onChange={handleChange}
+                  className="px-3 py-2 bg-gray-50/50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                />
+              </div>
 
-          <div className="flex flex-col">
-            <label
-              htmlFor="limit"
-              className="font-semibold text-gray-700 mb-2 text-sm"
-            >
-              My outlet : {myOutlet?.data?.namaOutlet || "Loading..."}
-            </label>
-            <div className="form-control w-full">
-              <label className="label">
-                <span className="label-text">Brand</span>
-                <div
-                  className="tooltip tooltip-left"
-                  data-tip="Brand ini terpasang ke outlet anda, dan item library terkait brand itu saja yang ditampilkan, jika ingin mendapatkan semua item library, hilangkan filter brand"
-                >
-                  <button className="btn btn-sm btn-circle btn-ghost">
-                    <Info className="w-4 h-4" />
+              {/* Tanggal Akhir */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-gray-700 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                  Tanggal Terupdate Akhir
+                </label>
+                <input
+                  type="date"
+                  name="endDate"
+                  value={filter.endDate}
+                  onChange={handleChange}
+                  className="px-3 py-2 bg-gray-50/50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                />
+              </div>
+
+              {/* Limit */}
+              <div className="flex flex-col gap-1.5 md:col-span-2">
+                <label className="text-xs font-medium text-gray-700">Limit Baris Data</label>
+                <input
+                  type="number"
+                  name="limit"
+                  min="1"
+                  value={filter.limit}
+                  onChange={handleChange}
+                  className="px-3 py-2 bg-gray-50/50 border border-gray-200 rounded-lg text-sm text-gray-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                />
+              </div>
+
+              {/* Brand Filter */}
+              <div className="flex flex-col gap-2 md:col-span-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-gray-700 flex items-center gap-1">
+                    Brand Filter ({myOutlet?.data?.namaOutlet || "Outlet Default"})
+                    <span
+                      className="tooltip tooltip-right cursor-pointer text-gray-400 hover:text-gray-600"
+                      data-tip="Hanya menampilkan item terkait brand ini."
+                    >
+                      <Info className="w-3.5 h-3.5" />
+                    </span>
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5 p-2 bg-gray-50/50 border border-gray-200 rounded-xl min-h-[44px]">
+                  {brandList?.data?.data
+                    ?.filter((brand) => filter?.brandIds?.includes(brand._id))
+                    .map((brand) => (
+                      <span
+                        key={brand._id}
+                        className="inline-flex items-center gap-1 bg-white border border-gray-200 text-gray-800 text-xs font-medium px-2.5 py-1 rounded-md shadow-2xs"
+                      >
+                        {brand.name}
+                        <button
+                          type="button"
+                          className="text-gray-400 hover:text-red-500 transition-colors ml-0.5"
+                          onClick={() => {
+                            setFilter((prev) => ({
+                              ...prev,
+                              brandIds: prev.brandIds.filter((id) => id !== brand._id),
+                            }));
+                          }}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 text-xs text-primary font-medium px-2 py-1 rounded-md hover:bg-primary/5 transition-colors"
+                    onClick={() => document.getElementById("modalFilterByBrand")?.showModal()}
+                  >
+                    <Package className="w-3.5 h-3.5" />
+                    <span>Pilih Brand</span>
                   </button>
                 </div>
-              </label>
-              <div className="flex flex-wrap gap-2 min-h-[2.5rem] p-2 border rounded-lg">
-                {brandList?.data?.data
-                  ?.filter((brand) => filter?.brandIds?.includes(brand._id))
-                  .map((brand) => (
-                    <div
-                      key={brand._id}
-                      className="flex items-center bg-primary/10 text-primary rounded px-2 py-1"
-                    >
-                      <span>{brand.name}</span>
-                      <button
-                        type="button"
-                        className="ml-2 text-primary hover:text-red-500"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setFilter((prev) => ({
-                            ...prev,
-                            brandIds: prev.brandIds.filter(
-                              (id) => id !== brand._id,
-                            ),
-                          }));
-                        }}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
+              </div>
+            </div>
+
+            {/* Checkbox Toggles */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-gray-50/75 rounded-xl border border-gray-100">
+              {[
+                { id: "asc", label: "Urutan Ascending (Terbaru)", checked: filter.asc },
+                { id: "requiredQuantity", label: "Hanya yang memiliki stok", checked: filter.requiredQuantity },
+                { id: "requiredRpHargaDasar", label: "Hanya dengan harga dasar", checked: filter.requiredRpHargaDasar },
+                { id: "requiredBarcodeItem", label: "Hanya dengan barcode", checked: filter.requiredBarcodeItem },
+              ].map((item) => (
+                <label
+                  key={item.id}
+                  htmlFor={item.id}
+                  className="flex items-center gap-2.5 cursor-pointer select-none text-xs font-medium text-gray-700 hover:text-gray-900"
+                >
+                  <input
+                    id={item.id}
+                    type="checkbox"
+                    name={item.id}
+                    checked={item.checked}
+                    onChange={handleChange}
+                    className="checkbox checkbox-sm checkbox-primary rounded"
+                  />
+                  <span>{item.label}</span>
+                </label>
+              ))}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-col-reverse sm:flex-row items-center justify-between gap-3 pt-3 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={handleResetFilter}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors font-medium"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Reset Semua
+              </button>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto">
                 <button
                   type="button"
-                  className="text-primary hover:bg-primary/10 rounded px-2 flex items-center gap-1"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    document.getElementById("modalFilterByBrand")?.showModal();
-                  }}
+                  onClick={() => setExpanded(false)}
+                  className="w-full sm:w-auto px-4 py-2 text-sm text-gray-600 border border-gray-200 hover:bg-gray-50 rounded-lg font-medium transition-colors"
                 >
-                  <Package className="w-4 h-4" />
-                  Tambah Brand
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (debounceTimerRef.current) {
+                      clearTimeout(debounceTimerRef.current);
+                      setIsDebouncing(false);
+                    }
+                    setExpanded(false);
+                    setFilterZustand(filter);
+                    if (onChange) onChange(filter);
+                  }}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-5 py-2 text-sm bg-primary text-white rounded-lg font-medium hover:bg-primary/90 transition-colors shadow-sm"
+                >
+                  <Check className="w-4 h-4" />
+                  Terapkan Filter
                 </button>
               </div>
             </div>
           </div>
-
-          {/* Filter boolean  */}
-          <div className="grid grid-cols-2 gap-4 mb-4 p-4 bg-white rounded-md shadow-sm border border-gray-200">
-            <div className="flex items-center">
-              <div className="form-control">
-                <label className="cursor-pointer label">
-                  <span className="label-text font-semibold text-gray-800 text-sm">
-                    Urutan Ascending (terupdate terbaru)
-                  </span>
-                  <input
-                    id="asc"
-                    type="checkbox"
-                    name="asc"
-                    checked={filter.asc}
-                    onChange={handleChange}
-                    className="checkbox checkbox-primary ml-2"
-                  />
-                </label>
-              </div>
-            </div>
-            <div className="flex items-center">
-              <div className="form-control">
-                <label className="cursor-pointer label">
-                  <span className="label-text font-semibold text-gray-800 text-sm">
-                    Hanya memiliki kuantitas
-                  </span>
-                  <input
-                    id="requiredQuantity"
-                    type="checkbox"
-                    name="requiredQuantity"
-                    checked={filter.requiredQuantity}
-                    onChange={handleChange}
-                    className="checkbox checkbox-primary ml-2"
-                  />
-                </label>
-              </div>
-            </div>
-            <div className="flex items-center">
-              <div className="form-control">
-                <label className="cursor-pointer label">
-                  <span className="label-text font-semibold text-gray-800 text-sm">
-                    Hanya memiliki harga dasar
-                  </span>
-                  <input
-                    id="requiredRpHargaDasar"
-                    type="checkbox"
-                    name="requiredRpHargaDasar"
-                    checked={filter.requiredRpHargaDasar}
-                    onChange={handleChange}
-                    className="checkbox checkbox-primary ml-2"
-                  />
-                </label>
-              </div>
-            </div>
-            <div className="flex items-center">
-              <div className="form-control">
-                <label className="cursor-pointer label">
-                  <span className="label-text font-semibold text-gray-800 text-sm">
-                    Hanya memiliki barcode
-                  </span>
-                  <input
-                    id="requiredBarcodeItem"
-                    type="checkbox"
-                    name="requiredBarcodeItem"
-                    checked={filter.requiredBarcodeItem}
-                    onChange={handleChange}
-                    className="checkbox checkbox-primary ml-2"
-                  />
-                </label>
-              </div>
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            className="w-full py-2 px-4 bg-primary text-white rounded-lg text-sm hover:bg-primary/80 focus:outline-none focus:ring-2 focus:ring-primary"
-            onClick={() => {
-              // Bersihkan timer debounce jika ada
-              if (debounceTimerRef.current) {
-                clearTimeout(debounceTimerRef.current);
-                setIsDebouncing(false);
-              }
-
-              setTimeout(() => {
-                setExpanded(false);
-              }, 0);
-              setFilterZustand(filter);
-            }}
-          >
-            Apply Filter
-          </button>
-          <button
-            type="button"
-            className="w-full py-2 px-4 bg-primary text-white rounded-lg text-sm hover:bg-primary/80 focus:outline-none focus:ring-2 focus:ring-primary"
-            onClick={() => {
-              // Bersihkan timer debounce jika ada
-              if (debounceTimerRef.current) {
-                clearTimeout(debounceTimerRef.current);
-                setIsDebouncing(false);
-              }
-
-              setTimeout(() => {
-                setExpanded(false);
-              }, 0);
-              handleResetFilter();
-            }}
-          >
-            Reset Filter
-          </button>
-          <button
-            className="btn btn-sm  w-full rounded-lg bg-secondary text-center"
-            onClick={() => setExpanded(false)}
-          >
-            Close
-          </button>
-        </div>
+        </>
       )}
+
       <ModalFilterByBrand
         onConfirm={handleConfirmBrandFilter}
-        selectedBrand={myOutlet?.data?.brandIds}
+        selectedBrand={filter.brandIds}
       />
-    </form>
+    </div>
   );
 };
+
 
 export default FilterInventories;

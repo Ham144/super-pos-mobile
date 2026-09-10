@@ -18,17 +18,6 @@ const externalProductReferenceSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
-    searchKey: {
-      type: String,
-      trim: true,
-      default: "",
-    },
-    pageLimit: {
-      type: Number,
-      default: 5000,
-      min: 1,
-      max: 10000,
-    },
     x_api_key: {
       type: String,
       default: "",

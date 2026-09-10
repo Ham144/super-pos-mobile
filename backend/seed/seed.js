@@ -10,13 +10,42 @@ import PaymentMethod from "../models/PaymentMethod.model.js";
 import SystemConfig from "../models/SystemConfig.model.js";
 import SpgRefrensi from "../models/SpgRefrensi.model.js";
 import Soap from "../models/Soap.model.js";
+import ExternalProductReference from "../models/ExternalProductRefrence.js";
 import { createDefaultSoapSeed } from "../utils/soapNav/templates.js";
 
 const SUPERADMIN_USERNAME = "superadmin";
 const SUPERADMIN_PASSWORD = process.env.SEED_SUPERADMIN_PASSWORD;
+const COMPANY_NAME = "PT. Catur Sukses International";
 const RESET_SUPERADMIN_PASSWORD = process.argv.includes(
   "--reset-superadmin-password",
 );
+
+const NAV_STATELESS_LOCATIONS = [
+  { kodeOutlet: "BKS_JUAL", namaOutlet: "Jual Bekasi" },
+  { kodeOutlet: "BNDG_JUAL", namaOutlet: "Jual Bandung" },
+  { kodeOutlet: "CJRH_JUAL", namaOutlet: "Jual Cijerah" },
+  { kodeOutlet: "CKP_JUAL", namaOutlet: "Jual Cikampek" },
+  { kodeOutlet: "CPDH_JUAL", namaOutlet: "Jual Cipondoh" },
+  { kodeOutlet: "GLD_F_JUAL", namaOutlet: "Jual Glodok F" },
+  { kodeOutlet: "GLD_JUAL", namaOutlet: "Jual Glodok A" },
+  { kodeOutlet: "HRC_JUAL", namaOutlet: "Jual Harco" },
+  { kodeOutlet: "KSBI_JUAL", namaOutlet: "Jual KSBI" },
+  { kodeOutlet: "MNG2_JUAL", namaOutlet: "Jual Mangga2" },
+  { kodeOutlet: "OFFST_JUAL", namaOutlet: "Offical Store Jual" },
+  { kodeOutlet: "ONG_JUAL", namaOutlet: "Jual Ong" },
+  { kodeOutlet: "PKJ_JUAL", namaOutlet: "PKJ_JUAL" },
+  { kodeOutlet: "PLUIT_JUAL", namaOutlet: "Jual Pluit" },
+  { kodeOutlet: "PMRN_JUAL", namaOutlet: "PMRN_JUAL" },
+  { kodeOutlet: "PRMT_JUAL", namaOutlet: "Jual Permata" },
+  { kodeOutlet: "SNTL_JUAL", namaOutlet: "Jual Sentul" },
+  { kodeOutlet: "SRNG_JUAL", namaOutlet: "Jual Serang" },
+];
+
+const OFFLINE_OUTLET = {
+  kodeOutlet: "01",
+  namaOutlet: "Demo Offline Outlet",
+  description: "Outlet default boleh dihapus",
+};
 
 const sampleProducts = [
   {
@@ -146,34 +175,71 @@ const seedSuperadmin = async () => {
   });
 };
 
-const seedOutlet = async (brands, superadmin) => {
-  const brandIds = Object.values(brands).map((brand) => brand._id);
-  const favoriteSkus = sampleProducts.map((product) => product.sku);
-
-  const outlet = await Outlet.findOneAndUpdate(
-    { kodeOutlet: "01" },
+const upsertOutletBase = async ({
+  kodeOutlet,
+  namaOutlet,
+  mode,
+  description,
+  superadmin,
+  extraAddToSet = {},
+}) => {
+  return Outlet.findOneAndUpdate(
+    { kodeOutlet },
     {
+      $set: {
+        namaOutlet,
+        namaPerusahaan: COMPANY_NAME,
+        mode,
+        ...(description ? { description } : {}),
+      },
       $setOnInsert: {
-        kodeOutlet: "01",
-        namaOutlet: "Demo Offline Outlet",
-        description: "Outlet default boleh dihapus",
-        namaPerusahaan: "PT Outlet Demo",
+        kodeOutlet,
         periodeSettlement: 1,
         jamSettlement: "00:00",
         jumlahInvoice: 0,
         pendapatan: 0,
-        mode: "offline",
+        ...(description
+          ? {}
+          : { description: `Outlet NAV ${kodeOutlet}` }),
       },
       $addToSet: {
         kasirList: superadmin._id,
-        brandIds: { $each: brandIds },
-        favoritedInventoryIds: { $each: favoriteSkus },
+        ...extraAddToSet,
       },
     },
     { new: true, upsert: true, setDefaultsOnInsert: true },
   );
+};
 
-  return outlet;
+const seedOutlets = async (brands, superadmin) => {
+  const brandIds = Object.values(brands).map((brand) => brand._id);
+  const favoriteSkus = sampleProducts.map((product) => product.sku);
+  const outlets = [];
+
+  for (const location of NAV_STATELESS_LOCATIONS) {
+    const outlet = await upsertOutletBase({
+      kodeOutlet: location.kodeOutlet,
+      namaOutlet: location.namaOutlet,
+      mode: "stateless",
+      superadmin,
+    });
+    outlets.push(outlet);
+  }
+
+  const offlineOutlet = await upsertOutletBase({
+    kodeOutlet: OFFLINE_OUTLET.kodeOutlet,
+    namaOutlet: OFFLINE_OUTLET.namaOutlet,
+    mode: "offline",
+    description: OFFLINE_OUTLET.description,
+    superadmin,
+    extraAddToSet: {
+      brandIds: { $each: brandIds },
+      favoritedInventoryIds: { $each: favoriteSkus },
+    },
+  });
+  outlets.push(offlineOutlet);
+
+  return outlets;
 };
 
 const seedSpg = async () => {
@@ -275,13 +341,13 @@ const seedSystemConfigFromEnv = async () => {
   );
 };
 
-const seedSoapNav = async (outlet) => {
+const seedSoapNavForOutlets = async (outlets) => {
   const endpoint = process.env.NAV_SOAP_ENDPOINT;
   const usernameNTLM = process.env.SOAP_USERNAME_NTLM_SEED;
   const passwordNTLM = process.env.SOAP_PASSWORD_NTLM_SEED;
 
   if (!endpoint || !usernameNTLM || !passwordNTLM) {
-    return null;
+    return 0;
   }
 
   const soapSeed = createDefaultSoapSeed({
@@ -291,13 +357,55 @@ const seedSoapNav = async (outlet) => {
     noSeries: "SO-RTL",
   });
 
-  return Soap.findOneAndUpdate(
-    { outlet: outlet._id },
-    {
-      $set: { outlet: outlet._id, ...soapSeed },
-    },
-    { new: true, upsert: true, setDefaultsOnInsert: true },
-  );
+  const statelessOutlets = outlets.filter((outlet) => outlet.mode === "stateless");
+  let seeded = 0;
+
+  for (const outlet of statelessOutlets) {
+    await Soap.findOneAndUpdate(
+      { outlet: outlet._id },
+      {
+        $set: { outlet: outlet._id, ...soapSeed },
+      },
+      { new: true, upsert: true, setDefaultsOnInsert: true },
+    );
+    seeded += 1;
+  }
+
+  return seeded;
+};
+
+const seedExternalProductReferences = async (outlets) => {
+  const url = process.env.PRODUCT_REFERENCE_ENDPOINT;
+  const xApiKey = process.env.PRODUCT_REFERENCE_X_API_KEY || "";
+
+  if (!url) {
+    return 0;
+  }
+
+  let seeded = 0;
+
+  for (const outlet of outlets) {
+    const epr = await ExternalProductReference.findOneAndUpdate(
+      { outlet: outlet._id },
+      {
+        $set: {
+          outlet: outlet._id,
+          url,
+          x_api_key: xApiKey,
+          method: "GET",
+        },
+      },
+      { new: true, upsert: true, setDefaultsOnInsert: true },
+    );
+
+    await Outlet.updateOne(
+      { _id: outlet._id },
+      { $set: { ExternalProductReference: epr._id } },
+    );
+    seeded += 1;
+  }
+
+  return seeded;
 };
 
 const seed = async () => {
@@ -310,27 +418,41 @@ const seed = async () => {
   const brands = await seedBrands();
   await seedInventory();
   const superadmin = await seedSuperadmin();
-  const outlet = await seedOutlet(brands, superadmin);
+  const outlets = await seedOutlets(brands, superadmin);
   await seedPaymentMethods();
+
+  const offlineOutlet = outlets.find((outlet) => outlet.mode === "offline");
   const SPGs = await seedSpg();
-  outlet.spgList = SPGs.map((e) => e._id);
-  if (outlet.spgList?.length > 1) {
-    console.log("Spg Outlet berhasil di inisailiasi");
+  if (offlineOutlet) {
+    offlineOutlet.spgList = SPGs.map((e) => e._id);
+    await offlineOutlet.save();
+    if (offlineOutlet.spgList?.length > 1) {
+      console.log("Spg Outlet berhasil di inisialisasi");
+    }
   }
 
   const systemConfig = await seedSystemConfigFromEnv();
-  const soapConfig = await seedSoapNav(outlet);
+  const soapSeededCount = await seedSoapNavForOutlets(outlets);
+  const eprSeededCount = await seedExternalProductReferences(outlets);
+
+  const statelessCount = outlets.filter((o) => o.mode === "stateless").length;
+  const offlineCount = outlets.filter((o) => o.mode === "offline").length;
 
   console.log("Seed berhasil dijalankan.");
   console.log(`- Superadmin: ${superadmin.username}`);
-  console.log(`- Outlet: ${outlet.namaOutlet} (${outlet.kodeOutlet})`);
+  console.log(
+    `- Outlet: ${statelessCount} stateless, ${offlineCount} offline`,
+  );
   console.log(`- SKU contoh: ${sampleProducts.length}`);
   console.log("- Metode pembayaran: Tunai, Transfer, QRIS");
   console.log(
     `- Konfigurasi sistem dari .env: ${systemConfig ? "disimpan" : "dilewati"}`,
   );
   console.log(
-    `- Konfigurasi SOAP NAV dari .env: ${soapConfig ? "disimpan" : "dilewati"}`,
+    `- Konfigurasi SOAP NAV: ${soapSeededCount > 0 ? `${soapSeededCount} outlet` : "dilewati"}`,
+  );
+  console.log(
+    `- ExternalProductReference: ${eprSeededCount > 0 ? `${eprSeededCount} outlet` : "dilewati"}`,
   );
 
   if (RESET_SUPERADMIN_PASSWORD) {

@@ -6,17 +6,26 @@ import {
   FileText,
   Image as ImageIcon,
   MapPin,
+  Package,
+  RefreshCw,
+  Rocket,
   Server,
   Settings2,
   Shield,
   Store,
   Tag,
+  Trash2,
   Users,
   X,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { getAdConfig, saveAdConfig } from "@/api/adminApi";
 import { getSoapConfigByOutlet, saveSoapConfigByOutlet } from "@/api/soapApi";
+import {
+  deleteExternalProductConfigByOutlet,
+  getExternalProductConfigByOutlet,
+  syncExternalProductByOutlet,
+} from "@/api/externalProductReferenceApi";
 
 const EMPTY_SOAP = {
   endpoint: "",
@@ -31,6 +40,16 @@ const EMPTY_AD = {
   AD_PORT: 389,
   AD_DOMAIN: "",
   AD_BASE_DN: "",
+};
+
+const EMPTY_EXTERNAL_PRODUCT = {
+  url: "",
+  searchKey: "",
+  pageLimit: 1000,
+  x_api_key: "",
+  hasApiKey: false,
+  lastSyncedAt: null,
+  lastSyncSummary: null,
 };
 
 const TABS = [
@@ -61,6 +80,12 @@ export default function ModalOutletEdit({
   const [soapForm, setSoapForm] = useState(EMPTY_SOAP);
   const [adForm, setAdForm] = useState(EMPTY_AD);
   const [hasExistingSoapPassword, setHasExistingSoapPassword] = useState(false);
+  const [externalProductForm, setExternalProductForm] = useState(
+    EMPTY_EXTERNAL_PRODUCT,
+  );
+  const [isSeedingCatalog, setIsSeedingCatalog] = useState(false);
+  const [isDeletingExternalProduct, setIsDeletingExternalProduct] =
+    useState(false);
 
   useEffect(() => {
     setActiveTab("umum");
@@ -99,7 +124,117 @@ export default function ModalOutletEdit({
       .catch(() => setAdForm(EMPTY_AD));
   }, [outlet?._id]);
 
+  useEffect(() => {
+    if (!outlet?._id) {
+      setExternalProductForm(EMPTY_EXTERNAL_PRODUCT);
+      return;
+    }
+
+    getExternalProductConfigByOutlet(outlet._id)
+      .then((res) => {
+        const data = res?.data;
+        if (!data) {
+          setExternalProductForm({
+            ...EMPTY_EXTERNAL_PRODUCT,
+          });
+          return;
+        }
+        setExternalProductForm({
+          url: data.url || "",
+          searchKey: data.searchKey || "",
+          pageLimit: data.pageLimit || 1000,
+          x_api_key: "",
+          hasApiKey: Boolean(data.hasApiKey),
+          lastSyncedAt: data.lastSyncedAt || null,
+          lastSyncSummary: data.lastSyncSummary || null,
+        });
+      })
+      .catch(() => {
+        setExternalProductForm({
+          ...EMPTY_EXTERNAL_PRODUCT,
+        });
+      });
+  }, [outlet?._id, outlet?.kodeOutlet]);
+
   if (!outlet) return null;
+
+  const hasSeededCatalog = Boolean(externalProductForm.lastSyncedAt);
+
+  const handleSeedOrRenewCatalog = async () => {
+    if (!outlet._id) {
+      toast.error("Simpan outlet dulu sebelum inisialisasi katalog");
+      return;
+    }
+    if (!externalProductForm.url?.trim()) {
+      toast.error("URL sumber referensi produk wajib diisi");
+      return;
+    }
+    
+    setIsSeedingCatalog(true);
+    try {
+      const res = await syncExternalProductByOutlet(outlet._id, {
+        url: externalProductForm.url.trim(),
+        searchKey: externalProductForm.searchKey?.trim() || "",
+        pageLimit: Number(externalProductForm.pageLimit) || 1000,
+        ...(externalProductForm.x_api_key
+          ? { x_api_key: externalProductForm.x_api_key }
+          : {}),
+      });
+      
+      const summary = res?.data;
+      setExternalProductForm((prev) => ({
+        ...prev,
+        x_api_key: "",
+        hasApiKey: prev.hasApiKey || Boolean(prev.x_api_key),
+        lastSyncedAt: summary?.syncedAt || new Date().toISOString(),
+        lastSyncSummary: {
+          created: summary?.created || 0,
+          updated: summary?.updated || 0,
+          skipped: summary?.skipped || 0,
+        },
+      }));
+      
+      toast.success(
+        `Katalog → InventoryRefrensi · fetch: ${summary?.totalFetched ?? 0}, baru: ${summary?.created || 0}, update: ${summary?.updated || 0}, skip: ${summary?.skipped || 0}`,
+      );
+    } catch (err) {
+      toast.error(
+        err?.response?.data?.message ||
+          err.message ||
+          "Gagal inisialisasi/perbarui katalog",
+      );
+    } finally {
+      setIsSeedingCatalog(false);
+    }
+  };
+
+  const handleDeleteExternalProductConfig = async () => {
+    if (!outlet._id) return;
+    if (
+      !window.confirm(
+        "Hapus konfigurasi sumber referensi produk? Data InventoryRefrensi tidak ikut dihapus.",
+      )
+    ) {
+      return;
+    }
+
+    setIsDeletingExternalProduct(true);
+    try {
+      const res = await deleteExternalProductConfigByOutlet(outlet._id);
+      setExternalProductForm({
+        ...EMPTY_EXTERNAL_PRODUCT,
+      });
+      toast.success(res?.message || "Konfigurasi sumber referensi dihapus");
+    } catch (err) {
+      toast.error(
+        err?.response?.data?.message ||
+          err.message ||
+          "Gagal menghapus konfigurasi",
+      );
+    } finally {
+      setIsDeletingExternalProduct(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -117,7 +252,7 @@ export default function ModalOutletEdit({
             : {}),
         });
       }
-      
+
       if (adForm.AD_HOST && adForm.AD_DOMAIN && adForm.AD_BASE_DN) {
         await saveAdConfig({
           ...adForm,
@@ -348,6 +483,143 @@ export default function ModalOutletEdit({
 
             {activeTab === "integrasi" && (
               <>
+                <section className="rounded-xl border border-amber-100 bg-amber-50/40 p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h4 className="font-semibold text-amber-950 flex items-center gap-2">
+                        <Package className="w-4 h-4" />
+                        Referensi Produk Awal
+                      </h4>
+                      <p className="text-xs text-amber-900/80 mt-1">
+                        Dipakai sekali saat outlet baru, atau saat Anda minta
+                        perbarui katalog. Hasilnya disimpan ke InventoryRefrensi
+                        (app tetap standalone setelah itu).
+                      </p>
+                    </div>
+                    {hasSeededCatalog && (
+                      <span className="badge badge-success badge-outline shrink-0">
+                        Sudah diinisialisasi
+                      </span>
+                    )}
+                  </div>
+
+                  <input
+                    type="url"
+                    placeholder="URL API sumber produk"
+                    className="input input-bordered w-full bg-white"
+                    value={externalProductForm.url}
+                    onChange={(e) =>
+                      setExternalProductForm((p) => ({
+                        ...p,
+                        url: e.target.value,
+                      }))
+                    }
+                  />
+                  <div className="grid grid-cols-2 gap-3">
+                    <input
+                      type="text"
+                      placeholder="searchKey API (contoh: 10) — bukan kodeOutlet"
+                      className="input input-bordered bg-white"
+                      value={externalProductForm.searchKey}
+                      onChange={(e) =>
+                        setExternalProductForm((p) => ({
+                          ...p,
+                          searchKey: e.target.value,
+                        }))
+                      }
+                    />
+                    <input
+                      type="number"
+                      min="1"
+                      placeholder="Page limit"
+                      className="input input-bordered bg-white"
+                      value={externalProductForm.pageLimit}
+                      onChange={(e) =>
+                        setExternalProductForm((p) => ({
+                          ...p,
+                          pageLimit: Number(e.target.value) || 1000,
+                        }))
+                      }
+                    />
+                  </div>
+                  <input
+                    type="password"
+                    placeholder={
+                      externalProductForm.hasApiKey
+                        ? "x-api-key (kosongkan jika tidak ubah)"
+                        : "x-api-key (opsional)"
+                    }
+                    className="input input-bordered w-full bg-white"
+                    value={externalProductForm.x_api_key}
+                    onChange={(e) =>
+                      setExternalProductForm((p) => ({
+                        ...p,
+                        x_api_key: e.target.value,
+                      }))
+                    }
+                  />
+
+                  {hasSeededCatalog && (
+                    <div className="rounded-lg bg-white/80 border border-amber-100 px-3 py-2 text-xs text-gray-700 space-y-1">
+                      <p>
+                        Terakhir diperbarui:{" "}
+                        {new Date(
+                          externalProductForm.lastSyncedAt,
+                        ).toLocaleString("id-ID")}
+                      </p>
+                      {externalProductForm.lastSyncSummary && (
+                        <p>
+                          Baru:{" "}
+                          {externalProductForm.lastSyncSummary.created || 0} ·
+                          Update:{" "}
+                          {externalProductForm.lastSyncSummary.updated || 0} ·
+                          Skip:{" "}
+                          {externalProductForm.lastSyncSummary.skipped || 0}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="btn btn-warning flex-1"
+                      disabled={isSeedingCatalog}
+                      onClick={handleSeedOrRenewCatalog}
+                    >
+                      {isSeedingCatalog ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          Menulis ke InventoryRefrensi...
+                        </>
+                      ) : hasSeededCatalog ? (
+                        <>
+                          <RefreshCw className="w-4 h-4" />
+                          Perbarui Referensi Produk
+                        </>
+                      ) : (
+                        <>
+                          <Rocket className="w-4 h-4" />
+                          Inisialisasi Katalog
+                        </>
+                      )}
+                    </button>
+                    {(externalProductForm.url ||
+                      externalProductForm.hasApiKey ||
+                      hasSeededCatalog) && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-outline text-error"
+                        disabled={isDeletingExternalProduct}
+                        onClick={handleDeleteExternalProductConfig}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Hapus sumber
+                      </button>
+                    )}
+                  </div>
+                </section>
+
                 <section className="rounded-xl border border-blue-100 bg-blue-50/40 p-4 space-y-3">
                   <h4 className="font-semibold text-blue-900 flex items-center gap-2">
                     <Server className="w-4 h-4" />
@@ -369,52 +641,57 @@ export default function ModalOutletEdit({
                   </select>
                 </section>
 
-                <section className="rounded-xl border border-purple-100 bg-purple-50/40 p-4 space-y-3">
-                  <h4 className="font-semibold text-purple-900">SOAP NAV</h4>
-                  <input
-                    type="url"
-                    placeholder="Endpoint WSNav"
-                    className="input input-bordered w-full bg-white"
-                    value={soapForm.endpoint}
-                    onChange={(e) =>
-                      setSoapForm((p) => ({ ...p, endpoint: e.target.value }))
-                    }
-                  />
-                  <div className="grid grid-cols-2 gap-3">
+                {outlet.mode === "stateless" && (
+                  <section className="rounded-xl border border-purple-100 bg-purple-50/40 p-4 space-y-3">
+                    <h4 className="font-semibold text-purple-900">
+                      SOAP NAV (transaksi / stock — bukan katalog)
+                    </h4>
                     <input
-                      type="text"
-                      placeholder="Username NTLM"
-                      className="input input-bordered bg-white"
-                      value={soapForm.usernameNTLM}
+                      type="url"
+                      placeholder="Endpoint WSNav"
+                      className="input input-bordered w-full bg-white"
+                      value={soapForm.endpoint}
                       onChange={(e) =>
                         setSoapForm((p) => ({
                           ...p,
-                          usernameNTLM: e.target.value,
+                          endpoint: e.target.value,
                         }))
                       }
                     />
-                    <input
-                      type="password"
-                      placeholder={
-                        hasExistingSoapPassword
-                          ? "Password (kosongkan jika tidak ubah)"
-                          : "Password NTLM"
-                      }
-                      className="input input-bordered bg-white"
-                      value={soapForm.passwordNTLM}
-                      onChange={(e) =>
-                        setSoapForm((p) => ({
-                          ...p,
-                          passwordNTLM: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <input
+                        type="text"
+                        placeholder="Username NTLM"
+                        className="input input-bordered bg-white"
+                        value={soapForm.usernameNTLM}
+                        onChange={(e) =>
+                          setSoapForm((p) => ({
+                            ...p,
+                            usernameNTLM: e.target.value,
+                          }))
+                        }
+                      />
+                      <input
+                        type="password"
+                        placeholder={
+                          hasExistingSoapPassword
+                            ? "Password (kosongkan jika tidak ubah)"
+                            : "Password NTLM"
+                        }
+                        className="input input-bordered bg-white"
+                        value={soapForm.passwordNTLM}
+                        onChange={(e) =>
+                          setSoapForm((p) => ({
+                            ...p,
+                            passwordNTLM: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
                     <input
                       type="text"
                       placeholder="No Series"
-                      className="input input-bordered bg-white"
+                      className="input input-bordered w-full bg-white"
                       value={soapForm.defaults.noSeries}
                       onChange={(e) =>
                         setSoapForm((p) => ({
@@ -426,8 +703,8 @@ export default function ModalOutletEdit({
                         }))
                       }
                     />
-                  </div>
-                </section>
+                  </section>
+                )}
 
                 <section className="rounded-xl border border-green-100 bg-green-50/40 p-4 space-y-3">
                   <h4 className="font-semibold text-green-900 flex items-center gap-2">

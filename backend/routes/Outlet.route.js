@@ -109,7 +109,7 @@ router.get("/simple-outlet-list", async (req, res) => {
   try {
     const data = await Outlet.find({
       kasirList: { $in: [req.userId] },
-    }).select("kodeOutlet namaOutlet");
+    }).select("kodeOutlet namaOutlet mode");
     return res.json({ message: "berhasil", data });
   } catch (error) {
     console.log(error);

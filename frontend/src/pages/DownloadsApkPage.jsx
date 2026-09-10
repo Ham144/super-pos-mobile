@@ -78,11 +78,11 @@ export default function DownloadApkPage() {
         }
       );
 
-      toast.success(`Upload berhasil: ${res.data.fileName}`);
+      toast.success(`Upload berhasil: ${res?.data?.fileName || "Nama file tidak ditemukan"}`);
       setFile(null);
     } catch (err) {
       console.error(err);
-      toast.error(err.response?.data?.error || "Gagal upload");
+      toast.error(err?.response?.data?.error || "Gagal upload");
     } finally {
       setUploading(false);
     }
@@ -90,49 +90,6 @@ export default function DownloadApkPage() {
 
   return (
     <div className="flex flex-col md:flex-row p-6 gap-6 min-h-screen bg-gray-50">
-      {/* --- Bagian Upload APK --- */}
-      <div className="flex-1 max-w-full md:max-w-md mx-auto md:mx-0 bg-white rounded-lg shadow-xl p-6">
-        <h2 className="text-2xl font-extrabold text-gray-800 mb-6 border-b pb-3">
-          Upload Versi APK Baru
-        </h2>
-        <div className="mb-6">
-          <label
-            htmlFor="apk-file-input"
-            className="block text-gray-700 text-sm font-semibold mb-2"
-          >
-            Pilih file APK (.apk):
-          </label>
-          <input
-            id="apk-file-input"
-            type="file"
-            accept=".apk"
-            onChange={handleFileChange}
-            className="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-          />
-          {file && (
-            <p className="mt-2 text-sm text-gray-500">
-              File terpilih:{" "}
-              <span className="font-medium text-gray-700">{file.name}</span>
-            </p>
-          )}
-        </div>
-
-        <button
-          onClick={handleUpload}
-          disabled={uploading || !file} // Tombol disable jika tidak ada file atau sedang upload
-          className={`
-            w-full py-3 px-4 rounded-lg font-semibold text-white
-            transition-colors duration-300 ease-in-out
-            ${
-              uploading || !file
-                ? "bg-blue-300 cursor-not-allowed"
-                : "bg-blue-600 hover:bg-blue-700 shadow-md hover:shadow-lg"
-            }
-          `}
-        >
-          {uploading ? "Mengunggah..." : "Upload APK"}
-        </button>
-      </div>
 
       {/* --- Bagian Daftar Versi APK --- */}
       <div className="flex-1 w-full bg-white rounded-lg shadow-xl p-6">
@@ -146,9 +103,9 @@ export default function DownloadApkPage() {
           </p>
         ) : error ? (
           <p className="text-center text-red-600 text-lg py-10">
-            Gagal mengambil versi: {error}
+            Gagal mengambil versi: {error?.message}
           </p>
-        ) : data.length === 0 ? (
+        ) : data?.length === 0 ? (
           <p className="text-center text-gray-500 text-lg py-10">
             Belum ada versi APK yang diunggah.
           </p>
@@ -169,7 +126,7 @@ export default function DownloadApkPage() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {data.map((version, index) => (
+                {data?.map((version, index) => (
                   <tr
                     key={version}
                     className="hover:bg-blue-50 transition duration-150 ease-in-out"

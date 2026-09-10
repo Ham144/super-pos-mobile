@@ -453,6 +453,7 @@ router.post("/createNewUser", async (req, res) => {
     newUser.password = hashedPassword;
     newUser.roleName = roleName;
     newUser.kodeKasir = kodeKasir;
+    newUser.currentOutlet = outletId;
 
     // Field opsional
     if (targetHargaPenjualan !== undefined) {
@@ -514,6 +515,7 @@ router.put("/updateUser", async (req, res) => {
     roleName,
     blockedAccess,
     kodeKasir,
+    currentOutlet,
   } = req.body;
 
   // Validasi field wajib
@@ -575,6 +577,31 @@ router.put("/updateUser", async (req, res) => {
 
     if (blockedAccess && Array.isArray(blockedAccess)) {
       user.blockedAccess = blockedAccess;
+    }
+
+    if (currentOutlet !== undefined) {
+      const outlet =
+        typeof currentOutlet === "object" && currentOutlet
+          ? currentOutlet._id
+          : currentOutlet;
+
+      if (!outlet) {
+        return res.status(400).json({
+          message: "currentOutlet wajib diisi",
+        });
+      }
+
+      const allowed = await Outlet.exists({
+        _id: outlet,
+        kasirList: _id,
+      });
+      if (!allowed) {
+        return res.status(400).json({
+          message:
+            "Outlet tidak valid atau user belum di-assign ke outlet tersebut",
+        });
+      }
+      user.currentOutlet = outlet;
     }
 
     // Simpan perubahan

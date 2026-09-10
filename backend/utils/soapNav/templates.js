@@ -55,7 +55,7 @@ export const createDefaultSoapSeed = ({
   endpoint,
   usernameNTLM,
   passwordNTLM,
-  defaults,
+  noSeries = "SO-RTL",
 }) => {
   if (!endpoint || !usernameNTLM || !passwordNTLM) {
     throw new Error(
@@ -63,12 +63,12 @@ export const createDefaultSoapSeed = ({
     );
   }
 
-
   return {
     endpoint,
     usernameNTLM,
     passwordNTLM,
     timeoutMs: 30000,
+    noSeries,
     operations: createDefaultNavOperations(),
   };
 };

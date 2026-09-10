@@ -87,10 +87,20 @@ bug fixing 2026-06-10
 [x] bisa login dengan ldap
 [x] outlet switcher
 [] sempurkanan pendekatan inventory "stateless" dan 'offline'
+## alur inventory list:
+- sumber katalog SELALU InventoryRefrensi (bukan SOAP)
+- offline: dump ke AsyncStorage + sync-offline-mode
+- stateless: fetch partial/live dari getAllinventoriesMobile (tanpa AsyncStorage dump), jangan sentuh sync-offline-mode
+# SOAP dipakai belakangan untuk alur bill/stock check, bukan daftar library
 [] super_pos_csi: bisa input biaya berdasarkan category yg di config
 [] super_pos_csi: check stock berdasarkan wilayah (SOAP)
 # optimaasi lanjutan
-[] buat sku offline di sqlite agar lebih ringan
+[x] /all_account page editing modal
+[x] /outlet page editing modal
+[x] /item_library page editing modal
+[x] dapatkan initial inventory dari soap (mode stateless) 
+[x] dapatkan initial inventory dari soap (mode offline) 
+
 
 note: 
 ## alur logika outlet mode stateless: 

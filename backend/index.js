@@ -22,7 +22,6 @@ import auhtRoutes from "./routes/auth.route.js";
 import authenticate from "./middlewares/authenticate.js";
 import authorize from "./middlewares/authorize.js";
 import documentRoutes from "./routes/document.route.js";
-import reportRoutes from "./routes/report.route.js";
 import inventoryStatRoute from "./routes/inventoryStat.route.js";
 import adminRoutes from "./routes/admin.route.js";
 import cookieParser from "cookie-parser";
@@ -80,7 +79,6 @@ app.get("/", async (req, res) => {
 connectDB();
 
 //public seutuhnya || kalau sebagian, tambah ke noAuthOriginalUrl sj
-app.use("/api/v1/report", reportRoutes);
 app.use("/api/v1/document", documentRoutes);
 app.use("/api/v1/download", donwloadRoutes);
 

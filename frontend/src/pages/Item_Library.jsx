@@ -38,7 +38,7 @@ const formatInventoryImportError = (data) => {
   if (parts.length) return parts.join(" | ");
   return data.message || "Terjadi kesalahan";
 };
-import toast from "react-hot-toast";
+import toast, { Toaster } from "react-hot-toast";
 import { getAllBarangPromo, getAllPromoByProduct } from "../api/promoApi";
 import { getAllDiskon, getAllDiskonByProduct } from "../api/diskonApi";
 import { getAllBrands } from "../api/brandApi";
@@ -48,8 +48,7 @@ import PickDiskonDialog from "../components/pickDiskonDialog";
 import PickVoucherDialog from "../components/pickVoucherDialog";
 import { useNavigate, useLocation } from "react-router-dom";
 import FilterInventories from "../components/filterInventories";
-import { useFilter, useUserInfo } from "../store";
-import { getOuletByUserId } from "@/api/outletApi";
+import { useFilter } from "../store";
 
 import {
   BellRing,
@@ -59,7 +58,6 @@ import {
   Plus,
   Upload,
   Download,
-  RefreshCw,
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
@@ -112,33 +110,8 @@ const ItemLibrary = () => {
   const [tempVoucherTerhubung, setTempVoucherTerhubung] = useState([]);
   const [tempVoucherTerputus, setTempVoucherTerputus] = useState([]);
 
-  const { userInfo } = useUserInfo();
-
   //zustand
   const { filter, setFilter } = useFilter();
-
-  const { data: myOutlet } = useQuery({
-    queryKey: ["outlet", userInfo?._id],
-    queryFn: () => getOuletByUserId(userInfo?._id),
-    enabled: !!userInfo?._id,
-  });
-
-  // Initialize filter with brandIds from outlet
-  useEffect(() => {
-    if (myOutlet?.data?.brandIds) {
-      setFilter({
-        ...filter,
-        brandIds: myOutlet.data.brandIds,
-        page: 1,
-        skip: 0,
-        limit: 100,
-        asc: true,
-        searchKey: "",
-        startDate: "",
-        endDate: "",
-      });
-    }
-  }, [myOutlet?.data?.brandIds]);
 
   // Menambahkan state untuk pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -156,7 +129,7 @@ const ItemLibrary = () => {
       setFilter({ ...filter, searchKey: searchFromUrl });
     }
   }, [searchFromUrl]);
-
+  
   // Reset currentPage ketika filter berubah (kecuali perubahan skip)
   useEffect(() => {
     // Jika filter berubah (selain skip dan page, yang berubah karena pagination)
@@ -179,12 +152,34 @@ const ItemLibrary = () => {
     filter.brandIds,
   ]);
 
+  const resetInventoryFormState = () => {
+    setselectedInventory(null);
+    setNewSingleInventory(null);
+    setSelectedImage(null);
+    setTempPromoTerhubung([]);
+    setTempPromoTerputus([]);
+    setTempDiskonTerhubung([]);
+    setTempDiskonTerputus([]);
+    setTempVoucherTerhubung([]);
+    setTempVoucherTerputus([]);
+  };
+
+  const closeInventoryModal = () => {
+    document.getElementById("modalInventoryForm")?.close();
+  };
+
+  const openInventoryModal = () => {
+    requestAnimationFrame(() => {
+      document.getElementById("modalInventoryForm")?.showModal();
+    });
+  };
+
   const { mutateAsync: handleToggleDisableInventory } = useMutation({
     mutationFn: (id) => toggleDisableInventory(id),
     onSuccess: () => {
       toast.success("berhasil mengubah status inventory");
       queryClient.invalidateQueries(["inventories"]);
-      setselectedInventory(null);
+      closeInventoryModal();
     },
     onError: (error) => {
       toast.error(
@@ -245,7 +240,9 @@ const ItemLibrary = () => {
         (inv) => inv.sku === searchFromUrl,
       );
       if (matchingInventory) {
+        setNewSingleInventory(null);
         setselectedInventory(matchingInventory);
+        openInventoryModal();
       }
     }
   }, [inventories, searchFromUrl]);
@@ -276,7 +273,9 @@ const ItemLibrary = () => {
 
   const handleItemClick = (item) => {
     setSelectedImage(null);
+    setNewSingleInventory(null);
     setselectedInventory(item);
+    openInventoryModal();
   };
 
   const { data: promoList } = useQuery({
@@ -295,17 +294,21 @@ const ItemLibrary = () => {
   const { data: voucherList } = useQuery({
     queryFn: getAllVouchers,
     queryKey: ["voucher"],
+    enabled: !!selectedInventory,
   });
 
   const { data: selectedInventoryPromoList } = useQuery({
     queryFn: () => getAllPromoByProduct(selectedInventory?.sku),
-    queryKey: ["promoList", selectedInventory?.sku],
+    queryKey: ["promoList", selectedInventory],
+    enabled: !!selectedInventory,
   });
+
 
   const { data: selectedInventoryDiskonList } = useQuery({
     queryFn: () => getAllDiskonByProduct(selectedInventory?.sku),
-    queryKey: ["diskonList", selectedInventory?.sku],
-  });
+    queryKey: ["diskonList", selectedInventory],
+    enabled: !!selectedInventory,
+    });
 
   const { mutateAsync: handleUpdateInventory } = useMutation({
     mutationFn: async (body) => {
@@ -319,9 +322,8 @@ const ItemLibrary = () => {
     onSuccess: async (response) => {
       // Pastikan response sukses
       if (response) {
-        setSelectedImage(null);
-        setselectedInventory(null);
         toast.success("berhasil Update");
+        closeInventoryModal();
         // Invalidate dan refetch dengan await
         await queryClient.invalidateQueries(["inventories"]);
         await refetchInventories();
@@ -352,6 +354,8 @@ const ItemLibrary = () => {
         await queryClient.invalidateQueries(["inventories"]);
         await refetchInventories();
         toast.success("berhasil register new single inventory");
+        closeInventoryModal();
+        document.getElementById("modalInventoryForm")?.close(); 
       } else {
         toast.error(
           response?.response?.data?.message ||
@@ -396,9 +400,8 @@ const ItemLibrary = () => {
   const handleShowValue = () => {
     if (newSingleInventory) {
       return newSingleInventory;
-    } else {
-      return selectedInventory;
     }
+    return selectedInventory || {};
   };
 
   const handleDirectPromoTerputus = (id) => {
@@ -729,19 +732,10 @@ const ItemLibrary = () => {
     document.body.removeChild(link);
   };
 
-  
   return (
-    <div
-      className={`min-h-screen bg-gradient-to-br from-blue-50/30 to-gray-50 ${
-        selectedInventory || newSingleInventory
-          ? "grid grid-cols-4 gap-3"
-          : "flex"
-      }`}
-    >
+    <div className="min-h-screen bg-gradient-to-br from-blue-50/30 to-gray-50 flex">
       {/* Main Content */}
-      <div
-        className={`${selectedInventory || newSingleInventory ? "col-span-3" : "w-full"}`}
-      >
+      <div className="w-full">
         {/* Header with Notifications */}
         <div className="bg-white border-b border-blue-100 sticky top-0 z-30 shadow-sm">
           <div className="px-4 py-3 flex items-center justify-between">
@@ -795,8 +789,9 @@ const ItemLibrary = () => {
               <button
                 onClick={() => {
                   setselectedInventory(null);
-                  setNewSingleInventory(null);
-                  setTimeout(() => setNewSingleInventory({}), 400);
+                  setSelectedImage(null);
+                  setNewSingleInventory({});
+                  openInventoryModal();
                 }}
                 className="btn bg-gradient-to-r from-blue-600 to-blue-700 text-white border-0 hover:from-blue-700 hover:to-blue-800 shadow-lg shadow-blue-950/25"
               >
@@ -840,13 +835,6 @@ const ItemLibrary = () => {
                   </li>
                 </ul>
               </div>
-
-              <button
-                onClick={refetchInventories}
-                className="btn btn-circle btn-ghost hover:bg-blue-50"
-              >
-                <RefreshCw className="w-5 h-5 text-blue-600" />
-              </button>
             </div>
           </div>
 
@@ -1133,335 +1121,359 @@ const ItemLibrary = () => {
         </div>
       </div>
 
-      {/* Right Panel */}
-      {(selectedInventory || newSingleInventory) && (
-        <div className="col-span-1 bg-white border-l border-blue-100 shadow-xl overflow-y-auto">
-          <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-blue-700 p-4">
-            <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-              <Package className="w-5 h-5" />
-              General Information
-            </h2>
+      {/* Inventory Create / Edit Modal */}
+      <dialog
+        id="modalInventoryForm"
+        className="modal"
+        onClose={resetInventoryFormState}
+      >
+        <Toaster position="top-center" />
+        <div className="modal-box w-11/12 max-w-2xl max-h-[90vh] p-0 overflow-hidden flex flex-col">
+          <div className="px-6 py-4 border-b bg-gradient-to-r from-blue-600 to-blue-700 text-white flex items-center justify-between shrink-0">
+            <div>
+              <h3 className="font-bold text-lg flex items-center gap-2">
+                <Package className="w-5 h-5" />
+                {newSingleInventory ? "Tambah Item" : "Edit Item"}
+              </h3>
+              <p className="text-blue-100 text-sm mt-0.5">
+                {newSingleInventory
+                  ? "Register inventory baru"
+                  : selectedInventory?.sku ||
+                    selectedInventory?.description ||
+                    "—"}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn btn-sm btn-circle btn-ghost text-white"
+              onClick={closeInventoryModal}
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
 
-          <div className="p-4 space-y-4">
-            {/* Action Buttons */}
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => {
-                  setselectedInventory(null);
-                  setNewSingleInventory(null);
-                }}
-                className="flex items-center justify-center gap-2 px-4 py-2.5 border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors text-gray-700"
-              >
-                <X className="w-5 h-5" />
-                Batal
-              </button>
-
-              <button
-                onClick={async () => {
-                  if (newSingleInventory) {
-                    handleCreateSingleInventory(newSingleInventory);
-                  } else {
-                    if (selectedImage) {
-                      await handleUploadImage();
-                      await handleUpdateInventory(selectedInventory);
+          {(selectedInventory || newSingleInventory) && (
+            <>
+              <div className="px-6 py-3 border-b bg-gray-50 flex gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={closeInventoryModal}
+                  className="btn btn-ghost flex-1"
+                >
+                  <X className="w-4 h-4" />
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (newSingleInventory) {
+                      handleCreateSingleInventory(newSingleInventory);
                     } else {
-                      handleUpdateInventory(selectedInventory);
+                      if (selectedImage) {
+                        await handleUploadImage();
+                        await handleUpdateInventory(selectedInventory);
+                      } else {
+                        handleUpdateInventory(selectedInventory);
+                      }
                     }
-                  }
-                }}
-                className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 shadow-lg shadow-blue-950/25"
-              >
-                <Save className="w-5 h-5" />
-                {newSingleInventory ? "Register" : "Update"}
-              </button>
-            </div>
+                  }}
+                  className="btn btn-primary flex-1"
+                >
+                  <Save className="w-4 h-4" />
+                  {newSingleInventory ? "Register" : "Update"}
+                </button>
+              </div>
 
-            {/* Form Fields */}
-            <div className="space-y-4">
-              {newSingleInventory && (
+              <div className="px-6 py-4 space-y-4 overflow-y-auto flex-1">
+                {newSingleInventory && (
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-700">
+                      SKU
+                    </label>
+                    <input
+                      type="text"
+                      name="sku"
+                      value={handleShowValue().sku}
+                      onChange={handleOnChange}
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-200 focus:border-blue-950 transition-all duration-200"
+                      placeholder="Masukkan SKU"
+                    />
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-gray-700">
-                    SKU
+                    Deskripsi (Nama Produk)
                   </label>
                   <input
                     type="text"
-                    name="sku"
-                    value={handleShowValue().sku}
+                    name="description"
+                    value={handleShowValue().description}
                     onChange={handleOnChange}
                     className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-200 focus:border-blue-950 transition-all duration-200"
-                    placeholder="Masukkan SKU"
+                    placeholder="Masukkan deskripsi"
                   />
                 </div>
-              )}
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">
-                  Deskripsi (Nama Produk)
-                </label>
-                <input
-                  type="text"
-                  name="description"
-                  value={handleShowValue().description}
-                  onChange={handleOnChange}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-200 focus:border-blue-950 transition-all duration-200"
-                  placeholder="Masukkan deskripsi"
-                />
-              </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">
+                    Quantity
+                  </label>
+                  <input
+                    type="text"
+                    name="quantity"
+                    value={handleShowValue().quantity}
+                    onChange={handleOnChange}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-200 focus:border-blue-950 transition-all duration-200"
+                    placeholder="0"
+                  />
+                </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">
-                  Quantity
-                </label>
-                <input
-                  type="text"
-                  name="quantity"
-                  value={handleShowValue().quantity}
-                  onChange={handleOnChange}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-200 focus:border-blue-950 transition-all duration-200"
-                  placeholder="0"
-                />
-              </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">
+                    Barcode Item
+                  </label>
+                  <input
+                    type="text"
+                    name="barcodeItem"
+                    value={handleShowValue().barcodeItem}
+                    onChange={handleOnChange}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-200 focus:border-blue-950 transition-all duration-200"
+                    placeholder="Masukkan barcode"
+                  />
+                </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">
-                  Barcode Item
-                </label>
-                <input
-                  type="text"
-                  name="barcodeItem"
-                  value={handleShowValue().barcodeItem}
-                  onChange={handleOnChange}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-200 focus:border-blue-950 transition-all duration-200"
-                  placeholder="Masukkan barcode"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">
-                  Brand
-                </label>
-                <select
-                  name="brand"
-                  value={handleShowValue().brand}
-                  onChange={handleOnChange}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-200 focus:border-blue-950 transition-all duration-200 appearance-none bg-white"
-                >
-                  <option value={handleShowValue().brand}>
-                    {handleShowValue().brand || "Pilih Brand"}
-                  </option>
-                  {brandList?.data?.data?.map((b) => (
-                    <option key={b._id} value={b.name}>
-                      {b?.name}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">
+                    Brand
+                  </label>
+                  <select
+                    name="brand"
+                    value={handleShowValue().brand}
+                    onChange={handleOnChange}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-200 focus:border-blue-950 transition-all duration-200 appearance-none bg-white"
+                  >
+                    <option value={handleShowValue().brand}>
+                      {handleShowValue().brand || "Pilih Brand"}
                     </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">
-                  Harga Dasar
-                </label>
-                <input
-                  type="text"
-                  name="RpHargaDasar"
-                  value={
-                    parseRpHargaDasar(handleShowValue()?.RpHargaDasar) ?? ""
-                  }
-                  onChange={handleOnChange}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-200 focus:border-blue-950 transition-all duration-200"
-                  placeholder="0"
-                />
-              </div>
-
-              {/* Promo Section */}
-              <div className="bg-gradient-to-r from-blue-50 to-white rounded-xl p-4 border border-blue-100">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <Gift className="w-5 h-5 text-blue-600" />
-                    <h3 className="font-semibold text-gray-800">
-                      Promo Terhubung
-                    </h3>
-                  </div>
-                  <button
-                    onClick={() => navigate("/promo")}
-                    className="text-sm text-blue-600 hover:text-blue-700"
-                  >
-                    Kelola Promo
-                  </button>
+                    {brandList?.data?.data?.map((b) => (
+                      <option key={b._id} value={b.name}>
+                        {b?.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-                <div className="flex flex-wrap gap-2 min-h-[40px]">
-                  {promoList?.data?.map(
-                    (promo) =>
-                      (promo.skuList.includes(handleShowValue().sku) ||
-                        tempPromoTerhubung?.includes(promo._id)) && (
-                        <span
-                          key={promo._id}
-                          className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded-lg text-xs"
-                        >
-                          {promo?.judulPromo}
-                          <button
-                            onClick={() => handleDirectPromoTerputus(promo._id)}
-                            className="ml-1 p-0.5 hover:bg-blue-200 rounded-full"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </span>
-                      ),
-                  )}
-                </div>
-                <button
-                  onClick={() => {
-                    document.getElementById("pickpromo").showModal();
-                    setTempPromoTerhubung(
-                      selectedInventoryPromoList?.data?.data.map(
-                        (item) => item._id,
-                      ),
-                    );
-                  }}
-                  className="mt-3 w-full px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors"
-                >
-                  Atur Promo
-                </button>
-              </div>
 
-              {/* Diskon Section */}
-              <div className="bg-gradient-to-r from-orange-50 to-white rounded-xl p-4 border border-orange-100">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <Percent className="w-5 h-5 text-orange-600" />
-                    <h3 className="font-semibold text-gray-800">
-                      Diskon Terhubung
-                    </h3>
-                  </div>
-                  <button
-                    onClick={() => navigate("/diskon")}
-                    className="text-sm text-orange-600 hover:text-orange-700"
-                  >
-                    Kelola Diskon
-                  </button>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">
+                    Harga Dasar
+                  </label>
+                  <input
+                    type="text"
+                    name="RpHargaDasar"
+                    value={
+                      parseRpHargaDasar(handleShowValue()?.RpHargaDasar) ?? ""
+                    }
+                    onChange={handleOnChange}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-200 focus:border-blue-950 transition-all duration-200"
+                    placeholder="0"
+                  />
                 </div>
-                <div className="flex flex-wrap gap-2 min-h-[40px]">
-                  {diskonList?.data?.data?.map(
-                    (diskon) =>
-                      (diskon.skuTanpaSyarat.includes(handleShowValue().sku) ||
-                        tempDiskonTerhubung?.includes(diskon._id)) && (
-                        <span
-                          key={diskon._id}
-                          className="inline-flex items-center gap-1 px-2 py-1 bg-orange-100 text-orange-700 rounded-lg text-xs"
-                        >
-                          {diskon?.judulDiskon}
-                          <button
-                            onClick={() =>
-                              handleDirectDiskonTerputus(diskon._id)
-                            }
-                            className="ml-1 p-0.5 hover:bg-orange-200 rounded-full"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </span>
-                      ),
-                  )}
-                </div>
-                <button
-                  onClick={() => {
-                    document.getElementById("pickdiskon").showModal();
-                    setTempDiskonTerhubung(
-                      selectedInventoryDiskonList?.data?.data.map(
-                        (item) => item._id,
-                      ),
-                    );
-                  }}
-                  className="mt-3 w-full px-3 py-2 bg-orange-600 text-white rounded-lg text-sm hover:bg-orange-700 transition-colors"
-                >
-                  Atur Diskon
-                </button>
-              </div>
 
-              {/* Status */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                  Status
-                  <span
-                    className={`text-xs ${selectedInventory?.isDisabled ? "text-red-500" : "text-green-500"}`}
-                  >
-                    {selectedInventory?.isDisabled
-                      ? "(Tidak Aktif)"
-                      : "(Aktif)"}
-                  </span>
-                  <div className="dropdown dropdown-hover">
-                    <HelpCircle className="w-4 h-4 text-gray-400 cursor-help" />
-                    <div className="dropdown-content z-40 p-2 shadow-xl bg-white rounded-lg text-xs w-48">
-                      Jika Barang Disabled, tidak akan bisa terjual di aplikasi
-                      mobile
+                {/* Promo Section */}
+                <div className="bg-gradient-to-r from-blue-50 to-white rounded-xl p-4 border border-blue-100">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Gift className="w-5 h-5 text-blue-600" />
+                      <h3 className="font-semibold text-gray-800">
+                        Promo Terhubung
+                      </h3>
                     </div>
+                    <button
+                      onClick={() => navigate("/promo")}
+                      className="text-sm text-blue-600 hover:text-blue-700"
+                    >
+                      Kelola Promo
+                    </button>
                   </div>
-                </label>
-                <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2 min-h-[40px]">
+                    {promoList?.data?.map(
+                      (promo) =>
+                        (promo.skuList.includes(handleShowValue().sku) ||
+                          tempPromoTerhubung?.includes(promo._id)) && (
+                          <span
+                            key={promo._id}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded-lg text-xs"
+                          >
+                            {promo?.judulPromo}
+                            <button
+                              onClick={() =>
+                                handleDirectPromoTerputus(promo._id)
+                              }
+                              className="ml-1 p-0.5 hover:bg-blue-200 rounded-full"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ),
+                    )}
+                  </div>
                   <button
-                    onClick={() =>
-                      setselectedInventory((prev) => ({
-                        ...prev,
-                        isDisabled: true,
-                      }))
-                    }
-                    className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      selectedInventory?.isDisabled
-                        ? "bg-red-500 text-white"
-                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                    }`}
+                    onClick={() => {
+                      document.getElementById("pickpromo").showModal();
+                      setTempPromoTerhubung(
+                        selectedInventoryPromoList?.data?.data.map(
+                          (item) => item._id,
+                        ),
+                      );
+                    }}
+                    className="mt-3 w-full px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors"
                   >
-                    Disable
-                  </button>
-                  <button
-                    onClick={() =>
-                      setselectedInventory((prev) => ({
-                        ...prev,
-                        isDisabled: false,
-                      }))
-                    }
-                    className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      !selectedInventory?.isDisabled
-                        ? "bg-green-500 text-white"
-                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                    }`}
-                  >
-                    Enable
+                    Atur Promo
                   </button>
                 </div>
-              </div>
 
-              {/* Thumbnail */}
-              <div className="space-y-3">
-                <label className="text-sm font-medium text-gray-700">
-                  Thumbnail
-                </label>
-                <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 hover:border-blue-400 transition-colors">
-                  <div className="flex flex-col items-center">
-                    <div className="w-32 h-32 bg-gray-100 rounded-lg overflow-hidden mb-3">
-                      <img
-                        alt="Preview"
-                        src={
-                          selectedImage
-                            ? URL.createObjectURL(selectedImage)
-                            : thumbnail?.data?.base64
-                        }
-                        className="w-full h-full object-cover"
+                {/* Diskon Section */}
+                <div className="bg-gradient-to-r from-orange-50 to-white rounded-xl p-4 border border-orange-100">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Percent className="w-5 h-5 text-orange-600" />
+                      <h3 className="font-semibold text-gray-800">
+                        Diskon Terhubung
+                      </h3>
+                    </div>
+                    <button
+                      onClick={() => navigate("/diskon")}
+                      className="text-sm text-orange-600 hover:text-orange-700"
+                    >
+                      Kelola Diskon
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-2 min-h-[40px]">
+                    {diskonList?.data?.data?.map(
+                      (diskon) =>
+                        (diskon.skuTanpaSyarat.includes(handleShowValue().sku) ||
+                          tempDiskonTerhubung?.includes(diskon._id)) && (
+                          <span
+                            key={diskon._id}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-orange-100 text-orange-700 rounded-lg text-xs"
+                          >
+                            {diskon?.judulDiskon}
+                            <button
+                              onClick={() =>
+                                handleDirectDiskonTerputus(diskon._id)
+                              }
+                              className="ml-1 p-0.5 hover:bg-orange-200 rounded-full"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ),
+                    )}
+                  </div>
+                  <button
+                    onClick={() => {
+                      document.getElementById("pickdiskon").showModal();
+                      setTempDiskonTerhubung(
+                        selectedInventoryDiskonList?.data?.data.map(
+                          (item) => item._id,
+                        ),
+                      );
+                    }}
+                    className="mt-3 w-full px-3 py-2 bg-orange-600 text-white rounded-lg text-sm hover:bg-orange-700 transition-colors"
+                  >
+                    Atur Diskon
+                  </button>
+                </div>
+
+                {/* Status */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                    Status
+                    <span
+                      className={`text-xs ${selectedInventory?.isDisabled ? "text-red-500" : "text-green-500"}`}
+                    >
+                      {selectedInventory?.isDisabled
+                        ? "(Tidak Aktif)"
+                        : "(Aktif)"}
+                    </span>
+                    <div className="dropdown dropdown-hover">
+                      <HelpCircle className="w-4 h-4 text-gray-400 cursor-help" />
+                      <div className="dropdown-content z-40 p-2 shadow-xl bg-white rounded-lg text-xs w-48">
+                        Jika Barang Disabled, tidak akan bisa terjual di aplikasi
+                        mobile
+                      </div>
+                    </div>
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() =>
+                        setselectedInventory((prev) => ({
+                          ...prev,
+                          isDisabled: true,
+                        }))
+                      }
+                      className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        selectedInventory?.isDisabled
+                          ? "bg-red-500 text-white"
+                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      }`}
+                    >
+                      Disable
+                    </button>
+                    <button
+                      onClick={() =>
+                        setselectedInventory((prev) => ({
+                          ...prev,
+                          isDisabled: false,
+                        }))
+                      }
+                      className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        !selectedInventory?.isDisabled
+                          ? "bg-green-500 text-white"
+                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      }`}
+                    >
+                      Enable
+                    </button>
+                  </div>
+                </div>
+
+                {/* Thumbnail */}
+                <div className="space-y-3">
+                  <label className="text-sm font-medium text-gray-700">
+                    Thumbnail
+                  </label>
+                  <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 hover:border-blue-400 transition-colors">
+                    <div className="flex flex-col items-center">
+                      <div className="w-32 h-32 bg-gray-100 rounded-lg overflow-hidden mb-3">
+                        <img
+                          alt="Preview"
+                          src={
+                            selectedImage
+                              ? URL.createObjectURL(selectedImage)
+                              : thumbnail?.data?.base64
+                          }
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => setSelectedImage(e.target.files[0])}
+                        className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                       />
                     </div>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => setSelectedImage(e.target.files[0])}
-                      className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                    />
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
+            </>
+          )}
         </div>
-      )}
+        <form method="dialog" className="modal-backdrop">
+          <button type="submit">close</button>
+        </form>
+      </dialog>
 
       {/* Modals */}
       <PickPromoDialog

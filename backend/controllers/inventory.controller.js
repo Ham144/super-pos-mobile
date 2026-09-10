@@ -4,7 +4,6 @@ import DaftarPromo from "../models/DaftarPromo.model.js";
 import DaftarVoucher from "../models/DaftarVoucher.model.js";
 import Brand from "../models/brand.model.js";
 import Outlet from "../models/Outlet.model.js";
-import UserRefrensi from "../models/User.model.js";
 import mongoose from "mongoose";
 import fs from "fs";
 import path from "path";
@@ -13,18 +12,6 @@ import { parseRpHargaDasar } from "../utils/parseRpHargaDasar.js";
 import { prepareBulkInventoryUpdates } from "../utils/prepareBulkInventoryUpdates.js";
 import { resolveSkuFromReq } from "../utils/resolveSku.js";
 import { csvCell, parseCsvFile } from "../utils/csvDelimiter.js";
-
-const resolveUserOutlet = async (userId, userDB) => {
-  const user = userDB || (await UserRefrensi.findById(userId));
-  if (!user) return null;
-
-  if (user.currentOutlet) {
-    const byCurrent = await Outlet.findById(user.currentOutlet);
-    if (byCurrent) return byCurrent;
-  }
-
-  return Outlet.findOne({ kasirList: { $in: [user._id] } });
-};
 
 //ini untuk buat manual inventory, jarang dipake karena biasanya sudah ada didapat dari api pihak ketiga
 export const registerSingleInventori = async (req, res) => {
@@ -63,7 +50,6 @@ export const registerSingleInventori = async (req, res) => {
     }
 
     const response = await InventoryRefrensi.create({
-      _id: sku,
       sku,
       description,
       isDisabled,
@@ -71,6 +57,7 @@ export const registerSingleInventori = async (req, res) => {
       RpHargaDasar: hargaBaru,
       barcodeItem: barcodeItem,
       brand,
+      outlet: req.userDB.currentOutlet,
     });
 
     await stackTracingSku(
@@ -123,7 +110,10 @@ export const disableSingleInventoriToggle = async (req, res) => {
   }
 
   try {
-    const inventory = await InventoryRefrensi.findOne({ sku });
+    const inventory = await InventoryRefrensi.findOne({
+      sku,
+      outlet: req.userDB.currentOutlet,
+    });
     if (!inventory) {
       return res.status(400).json({ message: "inventory tidak ditemukan" });
     }
@@ -139,7 +129,10 @@ export const disableSingleInventoriToggle = async (req, res) => {
 
 export const toggleDisableInventory = async (req, res) => {
   const { id } = req.params;
-  const inventory = await InventoryRefrensi.findOne({ sku: id });
+  const inventory = await InventoryRefrensi.findOne({
+    sku: id,
+    outlet: req.userDB.currentOutlet,
+  });
   if (!inventory) {
     return res.status(400).json({ message: "inventory tidak ditemukan" });
   }
@@ -173,6 +166,7 @@ export const updateSingleInventori = async (req, res) => {
   try {
     const item = await InventoryRefrensi.findOne({
       sku: sku.trim(),
+      outlet: req.userDB.currentOutlet,
     });
 
     if (!item) {
@@ -301,21 +295,26 @@ export const getAllinventories = async (req, res) => {
     limit = 100,
     asc = false,
     searchKey,
-    brandIds, //untuk mengambil brand tertentu saja (jika tidak ada outletid/brandId maka ambil semua inventory)
-    //filter untuk menampilkan data item dengan field memiliki nilai saja
+    brandIds, // filter sekunder di dalam outlet
     requiredQuantity = false,
     requiredRpHargaDasar = false,
     requiredBarcodeItem = false,
   } = req.query;
 
-  const complex = {};
+  const outletId = req.userDB.currentOutlet;
+
+  // multi-tenant: inventory selalu scoped ke outlet aktif
+  const complex = { outlet: outletId };
+
   if (brandIds) {
     const arrayBrandIds = brandIds?.split(",");
     const brandList = await Brand.find({
       _id: { $in: arrayBrandIds },
     });
     const brandName = brandList.map((brand) => brand.name);
-    complex.brand = { $in: brandName };
+    if (brandName.length > 0) {
+      complex.brand = { $in: brandName };
+    }
   }
 
   if (searchKey) {
@@ -347,6 +346,7 @@ export const getAllinventories = async (req, res) => {
   const totalItems = await InventoryRefrensi.countDocuments(complex);
   const totalPages = Math.ceil(totalItems / Number(limit));
   const data = await InventoryRefrensi.find(complex)
+    .populate("outlet", "namaOutlet kodeOutlet")
     .limit(Number(limit))
     .skip((Number(page) - 1) * Number(limit))
     .sort({ updatedAt: asc ? -1 : 1 });
@@ -377,19 +377,25 @@ const runBulkInventoryUpdate = async (req, res, updates) => {
 
   const updateOperations = prepared.map((item) => {
     const setFields = {
-      _id: item.sku,
       sku: item.sku,
       RpHargaDasar: item.RpHargaDasar,
       description: item.description,
       quantity: item.quantity,
+      outlet: req.userDB.currentOutlet,
     };
     if (item.brand) setFields.brand = item.brand;
     if (item.barcodeItem) setFields.barcodeItem = item.barcodeItem;
 
     return {
       updateOne: {
-        filter: { sku: item.sku },
-        update: { $set: setFields },
+        filter: { sku: item.sku, outlet: req.userDB.currentOutlet },
+        update: {
+          $set: setFields,
+          $setOnInsert: {
+            terjual: 0,
+            isDisabled: false,
+          },
+        },
         upsert: true,
       },
     };
@@ -521,6 +527,7 @@ export const getInventoryById = async (req, res) => {
 
     const inventory = await InventoryRefrensi.findOne({
       sku: skuId,
+      outlet: req.userDB.currentOutlet,
     });
 
     if (!inventory) {
@@ -553,20 +560,14 @@ export const getAllinventoriesMobile = async (req, res) => {
     searchKey,
   } = req.query;
 
-  const userDB = await UserRefrensi.findById(req.userId);
-  const myOutlet = await resolveUserOutlet(req.userId, userDB);
-  const brandIds = myOutlet?.brandIds;
-  const brandList = await Brand.find({
-    _id: { $in: brandIds },
-  });
-  const brandName = brandList.map((brand) => brand.name);
+  const outletId = req.userDB.currentOutlet;
+  const myOutlet = await Outlet.findById(outletId).select("mode");
 
   const complex = {
     isDisabled: { $ne: true },
+    outlet: outletId,
   };
-  if (brandName.length > 0) {
-    complex.brand = { $in: brandName };
-  }
+
   if (searchKey) {
     complex.$or = [
       { sku: { $regex: searchKey, $options: "i" } },

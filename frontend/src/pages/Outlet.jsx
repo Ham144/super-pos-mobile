@@ -398,7 +398,7 @@ const Outlet = () => {
                   </th>
                   <th className="px-4 py-4 text-left text-sm font-semibold">
                     <div className="flex items-center gap-1">
-                      Kasir List
+                      Akses Login
                       <div
                         className="tooltip tooltip-bottom"
                         data-tip="Kasir yang di assign/set untuk outlet ini"

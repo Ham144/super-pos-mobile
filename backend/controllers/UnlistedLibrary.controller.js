@@ -233,14 +233,13 @@ export const getUnlistedLibraryByQueries = async (req, res) => {
           );
 
           const result = await InventoryRefrensi.create({
-            _id: item?.no,
             sku: item?.no,
             quantity: 0,
             description: item?.description,
-            retail: item?.retail,
             brand: item?.manufacturer_code,
             barcodeItem: item?.barcode_item,
             RpHargaDasar: 0,
+            outlet: req.userDB.currentOutlet,
           });
 
           console.log(

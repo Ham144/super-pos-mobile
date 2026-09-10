@@ -1,11 +1,11 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
-  ScrollView,
   ToastAndroid,
   FlatList,
+  ActivityIndicator,
 } from "react-native";
 import RegisterInvoice from "../components/RegisterInvoice";
 import { Plus } from "lucide-react-native";
@@ -17,6 +17,9 @@ import {
   filterVisibleInventories,
   loadRemovedInventorySkus,
 } from "../utils/inventoryFilters";
+import { getAllInventoriesOnlineInitial } from "../api";
+
+const PAGE_LIMIT = 50;
 
 const LibrariesScreen = () => {
   const [showfilterModal, setshowFilterModal] = useState(false);
@@ -24,8 +27,11 @@ const LibrariesScreen = () => {
   const [selectedItem, setSelectedItem] = useState();
   const [favoritedInventorySkus, setFavoritedInventorySkus] = useState([]);
   const { setLoadingPrinting } = useLoading();
+  const [outletMode, setOutletMode] = useState(null); // "stateless" | "offline" | null
+  const [isLoadingLive, setIsLoadingLive] = useState(false);
+  const [livePage, setLivePage] = useState(1);
+  const [liveHasMore, setLiveHasMore] = useState(true);
 
-  // Filter state for date, limit, skip, etc.
   const [filter, setFilter] = useState({
     startDate: "",
     endDate: "",
@@ -36,22 +42,60 @@ const LibrariesScreen = () => {
   });
   const [userInfo, setUserInfo] = useState();
 
-  //zustand
   const { _id, addToCurrentBill, createCurrentBill, done } = useCurrentBill();
-  //sebelum difilter (Search)
   const { inventoriesOffline: inventoriList, setInventoriesOffline } =
     useInventoriesOffline();
 
-  //setelah difilter
   const [filteredInventories, setFilteredInventories] = useState([]);
   const searchTimeout = useRef(null);
-
-  // Di dalam komponen LibrariesScreen
   const [lastUpdateTimestamp, setLastUpdateTimestamp] = useState("");
   const intervalIdRef = useRef(null);
+  const isStateless = outletMode === "stateless";
 
-  // Fungsi untuk memeriksa pembaruan inventaris
+  const normalizeInventories = (list = []) =>
+    Array.from(
+      new Map(
+        (list || [])
+          .filter((item) => item?.isDisabled !== true)
+          .map((item) => [item._id || item.sku, item]),
+      ).values(),
+    );
+
+  const fetchLiveInventories = useCallback(
+    async ({ page = 1, append = false, searchKey = "" } = {}) => {
+      setIsLoadingLive(true);
+      try {
+        const response = await getAllInventoriesOnlineInitial(
+          page,
+          PAGE_LIMIT,
+          searchKey,
+        );
+        const pageData = normalizeInventories(response?.data || []);
+        const totalItems = Number(response?.totalItems || 0);
+
+        setFilteredInventories((prev) => {
+          const merged = append ? [...prev, ...pageData] : pageData;
+          return normalizeInventories(merged);
+        });
+        setLivePage(page);
+        setLiveHasMore(page * PAGE_LIMIT < totalItems && pageData.length > 0);
+      } catch (error) {
+        console.log(error);
+        ToastAndroid.show(
+          error?.response?.data?.message ||
+            error.message ||
+            "Gagal memuat inventory",
+          ToastAndroid.LONG,
+        );
+      } finally {
+        setIsLoadingLive(false);
+      }
+    },
+    [],
+  );
+
   const checkInventoryUpdates = async () => {
+    if (isStateless) return;
     try {
       const lastUpdate = await AsyncStorage.getItem("lastInventoryUpdate");
       if (lastUpdate && lastUpdate !== lastUpdateTimestamp) {
@@ -63,7 +107,7 @@ const LibrariesScreen = () => {
         );
 
         setInventoriesOffline(storedInventories);
-        handleSearch(storedInventories);
+        handleSearchOffline(storedInventories);
       }
     } catch (error) {
       console.log(error);
@@ -71,7 +115,7 @@ const LibrariesScreen = () => {
     }
   };
 
-  const handleSearch = (inventories = inventoriList) => {
+  const handleSearchOffline = (inventories = inventoriList) => {
     if (searchTimeout.current) {
       clearTimeout(searchTimeout.current);
     }
@@ -89,7 +133,6 @@ const LibrariesScreen = () => {
         );
       });
 
-      // 🔥 Hapus duplikat berdasarkan SKU
       const uniqueFiltered = Array.from(
         new Map(filtered?.map((item) => [item.sku, item])).values(),
       );
@@ -98,55 +141,45 @@ const LibrariesScreen = () => {
     }, 300);
   };
 
-  // Set up polling when component mounts and clean up on unmount
+  const handleSearch = () => {
+    if (isStateless) {
+      if (searchTimeout.current) clearTimeout(searchTimeout.current);
+      searchTimeout.current = setTimeout(() => {
+        fetchLiveInventories({
+          page: 1,
+          append: false,
+          searchKey: filter.searchKey,
+        });
+      }, 300);
+      return;
+    }
+    handleSearchOffline();
+  };
+
   useEffect(() => {
-    // Initial check
-    checkInventoryUpdates();
-
-    // Set up interval with longer duration
-    intervalIdRef.current = setInterval(checkInventoryUpdates, 10000);
-
-    // Clean up on unmount
-    return () => {
-      if (intervalIdRef.current) {
-        clearInterval(intervalIdRef.current);
-      }
-    };
-  }, [filter.searchKey]);
-
-  // Load initial data
-  useEffect(() => {
-    const initialCheck = async () => {
+    const bootstrap = async () => {
       const lastUpdate = await AsyncStorage.getItem("lastInventoryUpdate");
-      const userInfo = await AsyncStorage.getItem("userInfo");
+      const userInfoRaw = await AsyncStorage.getItem("userInfo");
       const favoritedRaw = await AsyncStorage.getItem("favoritedInventorySkus");
+      const outletRaw = await AsyncStorage.getItem("outlet");
+
       setFavoritedInventorySkus(favoritedRaw ? JSON.parse(favoritedRaw) : []);
       setLastUpdateTimestamp(lastUpdate || "");
-      setUserInfo(userInfo);
-    };
-    initialCheck();
-  }, []);
+      setUserInfo(userInfoRaw ? JSON.parse(userInfoRaw) : null);
 
-  // Single effect to handle filtering
-  useEffect(() => {
-    if (inventoriList) {
-      handleSearch();
-    }
-  }, [inventoriList, filter.searchKey]);
+      let mode = null;
+      try {
+        mode = outletRaw ? JSON.parse(outletRaw)?.mode : null;
+      } catch (_) {
+        mode = null;
+      }
+      setOutletMode(mode || "offline");
 
-  useEffect(() => {
-    function resetFilter() {
-      setFilter({
-        startDate: "",
-        endDate: "",
-        limit: 100,
-        skip: 0,
-        asc: true,
-        searchKey: "",
-      });
-    }
-    resetFilter();
-    const fetchInventoriesFromStorageToZustand = async () => {
+      if (mode === "stateless") {
+        await fetchLiveInventories({ page: 1, append: false, searchKey: "" });
+        return;
+      }
+
       const storedInventories = JSON.parse(
         await AsyncStorage.getItem("inventories"),
       );
@@ -155,19 +188,42 @@ const LibrariesScreen = () => {
         storedInventories,
         removedSkus,
       );
-
-      const uniqueInventories = Array.from(
-        new Map(
-          visibleInventories?.map((item) => [item._id || item.sku, item]),
-        ).values(),
-      );
-
+      const uniqueInventories = normalizeInventories(visibleInventories);
       setInventoriesOffline(uniqueInventories);
       setFilteredInventories(uniqueInventories);
     };
 
-    fetchInventoriesFromStorageToZustand();
-  }, []);
+    bootstrap();
+  }, [fetchLiveInventories, setInventoriesOffline]);
+
+  useEffect(() => {
+    if (isStateless) return;
+
+    checkInventoryUpdates();
+    intervalIdRef.current = setInterval(checkInventoryUpdates, 10000);
+    return () => {
+      if (intervalIdRef.current) clearInterval(intervalIdRef.current);
+    };
+  }, [filter.searchKey, isStateless, lastUpdateTimestamp]);
+
+  useEffect(() => {
+    if (isStateless) {
+      handleSearch();
+      return;
+    }
+    if (inventoriList) {
+      handleSearchOffline();
+    }
+  }, [inventoriList, filter.searchKey, isStateless]);
+
+  const handleLoadMore = () => {
+    if (!isStateless || isLoadingLive || !liveHasMore) return;
+    fetchLiveInventories({
+      page: livePage + 1,
+      append: true,
+      searchKey: filter.searchKey,
+    });
+  };
 
   const handleCreateCurrentBill = async (item) => {
     setLoadingPrinting(false);
@@ -180,12 +236,11 @@ const LibrariesScreen = () => {
       sku: item.sku,
       description: item?.description,
       quantity: 1,
-      RpHargaDasar: item?.RpHargaDasar?.$numberDecimal,
+      RpHargaDasar: item?.RpHargaDasar?.$numberDecimal ?? item?.RpHargaDasar,
       limitQuantity: item.quantity,
       user: userInfo?.username,
     };
 
-    // Using setTimeout to move the operation off the main thread
     setTimeout(() => {
       createCurrentBill(bill);
     }, 0);
@@ -201,17 +256,15 @@ const LibrariesScreen = () => {
       sku: item.sku,
       description: item.description,
       quantity: 1,
-      RpHargaDasar: item?.RpHargaDasar?.$numberDecimal,
+      RpHargaDasar: item?.RpHargaDasar?.$numberDecimal ?? item?.RpHargaDasar,
       limitQuantity: item.quantity,
     };
 
-    // Using setTimeout to move the operation off the main thread
     setTimeout(() => {
       addToCurrentBill(bill);
     }, 0);
   };
 
-  // Close modal function
   const handleHideFilterModal = () => {
     setshowFilterModal(false);
   };
@@ -221,9 +274,11 @@ const LibrariesScreen = () => {
     setSelectedItem(item);
   };
 
+  const hargaDasar = (item) =>
+    item?.RpHargaDasar?.$numberDecimal ?? item?.RpHargaDasar ?? 0;
+
   return (
     <View className="flex-1 bg-white flex-row pt-1">
-      {/* Left Side */}
       <View className="w-full absolute ">
         <FilterInventories
           filter={filter}
@@ -235,22 +290,28 @@ const LibrariesScreen = () => {
         />
       </View>
       <FlatList
-        data={filteredInventories} // Efficient rendering
+        data={filteredInventories}
         contentContainerStyle={{ paddingBottom: 10, paddingTop: 50 }}
         maxToRenderPerBatch={30}
         initialNumToRender={20}
-        keyExtractor={(item) => item?.sku} // Use unique key
+        keyExtractor={(item) => item?.sku}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.4}
+        ListFooterComponent={
+          isStateless && isLoadingLive ? (
+            <ActivityIndicator style={{ marginVertical: 12 }} />
+          ) : null
+        }
         renderItem={({ item }) => (
           <TouchableOpacity
             disabled={done}
             onPress={() => handleShowOptions(item)}
             className={`flex-row items-center justify-between w-full bg-white shadow-md rounded-lg mb-4 p-4 ${
-              item?.isDisabled || item?.quantity <= 0 || item?.RpHargaDasar == 0
+              item?.isDisabled || item?.quantity <= 0 || hargaDasar(item) == 0
                 ? "opacity-50"
                 : ""
             }`}
           >
-            {/* Deskripsi Produk */}
             <View style={{ flex: 1 }}>
               <Text
                 className="text-gray-800 font-semibold"
@@ -259,7 +320,6 @@ const LibrariesScreen = () => {
                 {item?.sku || item?.description}
               </Text>
 
-              {/* SKU (Kode Produk) */}
               <Text className="text-sm text-gray-500 mr-2">
                 <Text
                   className="font-medium"
@@ -269,7 +329,6 @@ const LibrariesScreen = () => {
                 </Text>
               </Text>
 
-              {/* Brand */}
               <Text className="text-sm text-gray-500 mr-2">
                 Brand:{" "}
                 <Text
@@ -281,7 +340,6 @@ const LibrariesScreen = () => {
               </Text>
             </View>
 
-            {/* Harga Dasar */}
             <View>
               <Text
                 className="text-lg text-green-600 font-bold mr-2"
@@ -290,13 +348,11 @@ const LibrariesScreen = () => {
                 Rp.{" "}
                 {Intl.NumberFormat("id-ID", {
                   currency: "IDR",
-                }).format(item?.RpHargaDasar?.$numberDecimal)}
+                }).format(hargaDasar(item))}
               </Text>
             </View>
 
-            {/* Quantity and Action */}
             <View className="flex-row items-center justify-center">
-              {/* Stok */}
               <Text
                 className="text-sm text-gray-600 mr-2"
                 style={{ fontFamily: "gilroyRegular" }}
@@ -322,7 +378,6 @@ const LibrariesScreen = () => {
                 )}
               </Text>
 
-              {/* Tombol Tindakan */}
               {item.isDisabled ? (
                 <View className="gap-y-2 flex items-center">
                   <Text
@@ -334,7 +389,7 @@ const LibrariesScreen = () => {
                 </View>
               ) : (
                 <TouchableOpacity
-                  disabled={item?.isDisabled || item?.RpHargaDasar < 1 || done}
+                  disabled={item?.isDisabled || hargaDasar(item) < 1 || done}
                   className="bg-blue-950 rounded-md text-center px-4 py-2 flex items-center justify-center hover:opacity-25"
                   onPress={() => {
                     setTimeout(() => {
@@ -363,17 +418,17 @@ const LibrariesScreen = () => {
               className="text-lg font-bold text-gray-800"
               style={{ fontFamily: "gilroyRegular" }}
             >
-              Tidak Ada Inventori yang bisa ditampilkan
+              {isLoadingLive
+                ? "Memuat inventori..."
+                : "Tidak Ada Inventori yang bisa ditampilkan"}
             </Text>
           </View>
         )}
-        windowSize={5} // Keep 5 screens worth of items in memory
-        removeClippedSubviews={true} // Improve memory efficiency
+        windowSize={5}
+        removeClippedSubviews={true}
       />
 
-      {/* Right Side */}
       <RegisterInvoice />
-      {/* Modal options seperti menambah ke favorite */}
       {isShowOptionsInventories && (
         <OptionInventoriesModal
           isShowOptionsInventories={isShowOptionsInventories}

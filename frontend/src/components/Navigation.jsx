@@ -81,7 +81,6 @@ const SideDrawer = ({ children }) => {
           currentOutlet: selected,
         });
       }
-      toast.success("Berhasil switch outlet");
       queryClient.invalidateQueries({ queryKey: ["userInfo"] });
       queryClient.invalidateQueries();
     },
@@ -266,7 +265,8 @@ const SideDrawer = ({ children }) => {
                 >
                   {outlets.map((outlet) => (
                     <option key={outlet._id} value={outlet._id}>
-                      {outlet.namaOutlet}
+                      {outlet.namaOutlet} {" - "}
+                      {outlet.mode}
                     </option>
                   ))}
                 </select>

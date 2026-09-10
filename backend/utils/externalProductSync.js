@@ -2,9 +2,8 @@ import axios from "axios";
 import mongoose from "mongoose";
 import InventoryRefrensi from "../models/InventoryRefrensi.model.js";
 import BrandRefrensi from "../models/brand.model.js";
+import Outlet from "../models/Outlet.model.js";
 import { parseRpHargaDasar } from "./parseRpHargaDasar.js";
-
-const buildInventoryId = (outletId, sku) => `${outletId}__${sku}`;
 
 const appendQueryParams = (baseUrl, params) => {
   const url = new URL(baseUrl);
@@ -16,35 +15,38 @@ const appendQueryParams = (baseUrl, params) => {
   return url.toString();
 };
 
+/** Hapus index lama yang membuat sku unique global (jika masih ada di Mongo). */
+export const ensureInventoryOutletSkuIndex = async () => {
+  try {
+    const indexes = await InventoryRefrensi.collection.indexes();
+    for (const idx of indexes) {
+      const keys = Object.keys(idx.key || {});
+      if (idx.unique && keys.length === 1 && keys[0] === "sku" && idx.name) {
+        await InventoryRefrensi.collection.dropIndex(idx.name);
+      }
+    }
+    await InventoryRefrensi.syncIndexes();
+  } catch (error) {
+    console.warn("ensureInventoryOutletSkuIndex:", error.message);
+  }
+};
+
+/**
+ * External product list item shape (muara / open API):
+ * { No, Brand, Description, Description_2, Retail, ... }
+ */
 export const normalizeExternalProduct = (item) => {
-  const sku = String(
-    item?.no ?? item?.sku ?? item?.code ?? item?.itemNo ?? "",
-  ).trim();
+  if (!item || typeof item !== "object") return null;
 
+  const sku = String(item.No ?? "").trim();
   if (!sku) return null;
-
-  const rawPrice =
-    item?.retail ??
-    item?.price ??
-    item?.unitPrice ??
-    item?.RpHargaDasar ??
-    0;
 
   return {
     sku,
-    description: String(
-      item?.description ?? item?.name ?? item?.itemName ?? sku,
-    ).trim(),
-    RpHargaDasar: parseRpHargaDasar(rawPrice) ?? 0,
-    brand: String(
-      item?.manufacturer_code ??
-        item?.brand ??
-        item?.manufacturerCode ??
-        "",
-    ).trim(),
-    barcodeItem: String(
-      item?.barcode_item ?? item?.barcode ?? item?.barcodeItem ?? "",
-    ).trim(),
+    description: String(item.Description || item.Description_2 || sku).trim(),
+    RpHargaDasar: parseRpHargaDasar(item.Retail) ?? 0,
+    brand: String(item.Brand ?? "").trim(),
+    barcodeItem: "",
   };
 };
 
@@ -102,10 +104,10 @@ export const syncExternalProductsForOutlet = async ({
   config,
   userId,
 }) => {
-  const resolvedSearchKey = config.searchKey?.trim() || outletKode;
-  if (!resolvedSearchKey) {
-    throw new Error("searchKey atau kodeOutlet wajib untuk sinkronisasi produk");
-  }
+  await ensureInventoryOutletSkuIndex();
+
+  // searchKey API eksternal ≠ kodeOutlet NAV. Jangan fallback ke kodeOutlet.
+  const resolvedSearchKey = config.searchKey?.trim() || "";
 
   const rawProducts = await fetchAllExternalProducts({
     url: config.url,
@@ -114,9 +116,18 @@ export const syncExternalProductsForOutlet = async ({
     x_api_key: config.x_api_key,
   });
 
+  if (!rawProducts.length) {
+    throw new Error(
+      `API sumber mengembalikan 0 produk (searchKey="${resolvedSearchKey || "(kosong)"}"). ` +
+        `Cek URL/searchKey — contoh yang bekerja: searchKey=10, bukan kodeOutlet.`,
+    );
+  }
+
   let created = 0;
   let updated = 0;
   let skipped = 0;
+  const errors = [];
+  const linkedBrandIds = new Set();
 
   for (const rawItem of rawProducts) {
     const product = normalizeExternalProduct(rawItem);
@@ -125,51 +136,61 @@ export const syncExternalProductsForOutlet = async ({
       continue;
     }
 
-    if (product.brand) {
-      await BrandRefrensi.findOneAndUpdate(
-        { name: product.brand },
-        { $addToSet: { skuList: product.sku } },
-        { upsert: true, new: true },
-      );
-    }
+    try {
+      if (product.brand) {
+        const brandDoc = await BrandRefrensi.findOneAndUpdate(
+          { name: product.brand },
+          { $addToSet: { skuList: product.sku } },
+          { upsert: true, new: true },
+        );
+        if (brandDoc?._id) linkedBrandIds.add(String(brandDoc._id));
+      }
 
-    const inventoryId = buildInventoryId(outletId, product.sku);
-    const existing = await InventoryRefrensi.findOne({
-      sku: product.sku,
-      outlet: outletId,
-    }).lean();
+      const existing = await InventoryRefrensi.findOne({
+        sku: product.sku,
+        outlet: outletId,
+      }).select("_id");
 
-    const updateFields = {
-      description: product.description,
-      RpHargaDasar: mongoose.Types.Decimal128.fromString(
-        String(product.RpHargaDasar),
-      ),
-      barcodeItem: product.barcodeItem || undefined,
-      brand: product.brand || undefined,
-      isDisabled: false,
-    };
-
-    if (existing) {
       await InventoryRefrensi.updateOne(
-        { _id: existing._id },
-        { $set: updateFields },
+        { sku: product.sku, outlet: outletId },
+        {
+          $set: {
+            description: product.description,
+            RpHargaDasar: mongoose.Types.Decimal128.fromString(
+              String(product.RpHargaDasar),
+            ),
+            barcodeItem: product.barcodeItem || undefined,
+            brand: product.brand || undefined,
+            isDisabled: false,
+          },
+          $setOnInsert: {
+            sku: product.sku,
+            outlet: outletId,
+            quantity: 0,
+            terjual: 0,
+          },
+        },
+        { upsert: true },
       );
-      updated += 1;
-      continue;
-    }
 
-    await InventoryRefrensi.create({
-      _id: inventoryId,
-      sku: product.sku,
-      outlet: outletId,
-      quantity: 0,
-      terjual: 0,
-      ...updateFields,
-      RpHargaDasar: product.RpHargaDasar,
-    });
-    created += 1;
+      if (existing) {
+        updated += 1;
+      } else {
+        created += 1;
+      }
+    } catch (error) {
+      skipped += 1;
+      errors.push({ sku: product.sku, reason: error.message });
+    }
   }
-  
+
+  if (linkedBrandIds.size) {
+    await Outlet.updateOne(
+      { _id: outletId },
+      { $addToSet: { brandIds: { $each: [...linkedBrandIds] } } },
+    );
+  }
+
   return {
     created,
     updated,
@@ -177,5 +198,6 @@ export const syncExternalProductsForOutlet = async ({
     totalFetched: rawProducts.length,
     syncedAt: new Date(),
     userId,
+    errors: errors.slice(0, 20),
   };
 };

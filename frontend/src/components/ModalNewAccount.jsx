@@ -2,7 +2,7 @@ import { createNewUser } from "@/api/authApi";
 import { getSimpleOuletList } from "@/api/outletApi";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import React, { useState } from "react";
-import toast from "react-hot-toast";
+import toast, { Toaster } from "react-hot-toast";
 import { mockBackend, mockPages } from "@/api/constant";
 
 import {
@@ -36,7 +36,7 @@ const ModalNewAccount = () => {
 
   const queryClient = useQueryClient();
   const { data: outletList } = useQuery({
-    queryKey: ["outlet"],
+    queryKey: ["simpleOutletList"],
     queryFn: getSimpleOuletList,
   });
 
@@ -124,6 +124,7 @@ const ModalNewAccount = () => {
 
   return (
     <dialog id="newAccount" className="modal">
+      <Toaster position="top-center" />
       <div className="modal-box w-full max-w-7xl p-0 overflow-hidden bg-gradient-to-br from-white to-blue-50/30 rounded-2xl shadow-2xl">
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-8 py-5">
@@ -141,20 +142,29 @@ const ModalNewAccount = () => {
                 </p>
               </div>
             </div>
-            <form method="dialog">
-              <button className="btn btn-sm btn-circle btn-ghost text-white hover:bg-white/20">
-                <X className="w-5 h-5" />
+            <div className="col-span-2 flex justify-end gap-3">
+              <form method="dialog">
+                <button
+                  type="button"
+                  onClick={() => document.getElementById("newAccount").close()}
+                  className="px-6 py-3 border border-white text-white font-medium rounded-md"
+                >
+                  Batal
+                </button>
+              </form>
+              <button
+                className="px-8 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-md hover:from-blue-700 hover:to-blue-800 transition-all duration-200 font-medium flex items-center gap-2 shadow-lg shadow-blue-950/25"
+                onClick={() => handleCreateNewUser()}
+              >
+                <Save className="w-5 h-5" />
+                Create Account
               </button>
-            </form>
+            </div>
           </div>
         </div>
 
         {/* Form */}
         <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleCreateNewUser();
-          }}
           className="p-8"
           style={{ maxHeight: "calc(100vh - 200px)", overflowY: "auto" }}
         >
@@ -172,27 +182,11 @@ const ModalNewAccount = () => {
               </div>
             </div>
           )}
+          
 
           {/* Grid Input Fields */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            <div className="col-span-2 flex justify-end gap-3">
-              <form method="dialog">
-                <button
-                  type="button"
-                  onClick={() => document.getElementById("newAccount").close()}
-                  className="px-6 py-3 border border-gray-300 rounded-xl text-gray-700 hover:bg-gray-50 transition-colors font-medium"
-                >
-                  Batal
-                </button>
-              </form>
-              <button
-                type="submit"
-                className="px-8 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all duration-200 font-medium flex items-center gap-2 shadow-lg shadow-blue-950/25"
-              >
-                <Save className="w-5 h-5" />
-                Create Account
-              </button>
-            </div>
+            
             {/* Username */}
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
@@ -398,11 +392,11 @@ const ModalNewAccount = () => {
                       onChange={() => toggleBlockedAccess(api.originalPath)}
                       className="checkbox checkbox-primary checkbox-sm mt-1"
                     />
-                    <div className="flex-1">
-                      <h5 className="text-sm font-semibold text-gray-800 group-hover:text-purple-600 transition-colors">
+                    <div className="flex-1 hover:text-wrap">
+                      <h5 className="text-sm font-semibold text-gray-800 group-hover:text-purple-600 transition-colors hover:text-wrap">
                         {api.originalPath}
                       </h5>
-                      <p className="text-xs text-gray-500 mt-1 line-clamp-2">
+                      <p className="text-xs text-gray-500 mt-1 line-clamp-2 hover:text-wrap">
                         {api.description}
                       </p>
                     </div>
