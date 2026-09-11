@@ -18,12 +18,15 @@ const invoiceSchema = new mongoose.Schema(
       //ini maksudnya item, sorry bad naming
       {
         RpHargaDasar: Number,
+        RpHargaLowest: Number,
         description: String,
         quantity: Number,
         sku: String,
         totalRp: Number,
         limitQuantity: Number,
         catatan: String,
+        priceEdited: Boolean,
+        quantityChanged: Boolean,
       },
     ],
     spg: {
@@ -137,6 +140,36 @@ const invoiceSchema = new mongoose.Schema(
       settlementTime: Date,
       notificationAt: Date,
     },
+    // --- outlet mode=stateless NAV bill flow ---
+    outlet: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Outlet",
+    },
+    discountApprovalStatus: {
+      type: String,
+      enum: ["none", "pending", "approved", "rejected"],
+      default: "none",
+    },
+    navDocumentNo: String,
+    navShipmentLines: [
+      {
+        documentNo: String,
+        lineNo: Number,
+        itemNo: String,
+        qty: Number,
+        location: String,
+        uom: String,
+        catatan: String,
+        type: String,
+      },
+    ],
+    warehouseReady: Boolean,
+    navShipAt: Date,
+    navShipReturnValue: String,
+    navInvoicedAt: Date,
+    navInvoiceReturnValue: String,
+    navUndoAt: Date,
+    navVoidAt: Date,
   },
   { timestamps: true }
 );

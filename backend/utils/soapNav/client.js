@@ -6,7 +6,11 @@ import {
   requireSoapDefault,
 } from "./constants.js";
 import { buildSoapXml } from "./buildXml.js";
-import { callSoapNav, extractXmlTagValue } from "./callSoap.js";
+import {
+  callSoapNav,
+  extractXmlTagValue,
+  parseInventoryPerLocationList,
+} from "./callSoap.js";
 
 const operationNeedsLocationCode = (operationKey) =>
   operationKey === NAV_SOAP_OPERATIONS.SALES_ORDER_AUTO_POSTING_SHIP ||
@@ -32,7 +36,10 @@ const getResolvedLocationCode = async (outletId, payload = {}) => {
 
 const assertDefaultsForOperation = (soapConfig, operationKey) => {
   if (operationKey === NAV_SOAP_OPERATIONS.SALES_ORDER_AUTO_POSTING_SHIP) {
-    requireSoapDefault(soapConfig.defaults?.noSeries, "noSeries");
+    requireSoapDefault(
+      soapConfig.defaults?.noSeries || soapConfig.noSeries,
+      "noSeries",
+    );
     requireSoapDefault(soapConfig.defaults?.sellToCustNo, "sellToCustNo");
   }
 };
@@ -106,21 +113,113 @@ export const executeNavSoap = async ({
 export const checkInventoryByOutlet = async ({
   outletId,
   skus = [],
-  operationKey = "GetInventoryByLocationMultiple",
+  operationKey = NAV_SOAP_OPERATIONS.GET_INVENTORY_BY_LOCATION_MULTIPLE,
 }) => {
   const locationCode = await getOutletLocationCode(outletId);
+  const uniqueSkus = [
+    ...new Set(skus.map((s) => String(s).trim()).filter(Boolean)),
+  ];
 
-  const items = skus.map((sku) => ({
+  const items = uniqueSkus.map((sku) => ({
     itemNo: sku,
     locationCode,
     quantity: 0,
   }));
 
-  return executeNavSoap({
+  const result = await executeNavSoap({
     outletId,
     operationKey,
     payload: { items, locationCode },
   });
+
+  const parsedItems = parseInventoryPerLocationList(
+    result.parsed?.returnValue || result.response?.body,
+  );
+
+  const quantityBySku = {};
+  for (const row of parsedItems) {
+    quantityBySku[row.itemNo] = row.quantity;
+  }
+
+  return {
+    ...result,
+    items: parsedItems,
+    quantityBySku,
+  };
+};
+
+/**
+ * Overlay NAV qty onto the current page of Mongo inventory docs.
+ * Used for outlet.mode === "stateless". Soft-fails to Mongo qty.
+ */
+export const enrichInventoriesWithNavStock = async (
+  outletId,
+  inventories = [],
+  {
+    operationKey = NAV_SOAP_OPERATIONS.GET_INVENTORY_BY_LOCATION_MULTIPLE,
+  } = {},
+) => {
+  const list = (inventories || []).map((inv) =>
+    typeof inv?.toObject === "function" ? inv.toObject() : { ...inv },
+  );
+  const skus = list.map((inv) => inv.sku).filter(Boolean);
+
+  if (!outletId || skus.length === 0) {
+    return {
+      inventories: list.map((inv) => ({ ...inv, stockSource: "local" })),
+      stockSource: "local",
+      navError: null,
+    };
+  }
+
+  const tryOps = [
+    operationKey,
+    NAV_SOAP_OPERATIONS.GET_STATELESS_INVENTORY,
+    NAV_SOAP_OPERATIONS.GET_INVENTORY_BY_LOCATION_MULTIPLE,
+  ].filter((op, idx, arr) => op && arr.indexOf(op) === idx);
+
+  let lastError = null;
+  for (const op of tryOps) {
+    try {
+      const result = await checkInventoryByOutlet({
+        outletId,
+        skus,
+        operationKey: op,
+      });
+      const enriched = list.map((inv) => {
+        const hasNav = Object.prototype.hasOwnProperty.call(
+          result.quantityBySku,
+          inv.sku,
+        );
+        return {
+          ...inv,
+          quantityLocal: inv.quantity,
+          quantity: hasNav ? result.quantityBySku[inv.sku] : inv.quantity,
+          stockSource: hasNav ? "nav" : "local",
+        };
+      });
+
+      return {
+        inventories: enriched,
+        stockSource: "nav",
+        navError: null,
+        quantityBySku: result.quantityBySku,
+        operationKey: op,
+      };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  return {
+    inventories: list.map((inv) => ({
+      ...inv,
+      quantityLocal: inv.quantity,
+      stockSource: "local",
+    })),
+    stockSource: "local",
+    navError: lastError?.message || "NAV stock gagal",
+  };
 };
 
 export default {
@@ -128,4 +227,5 @@ export default {
   getOutletLocationCode,
   executeNavSoap,
   checkInventoryByOutlet,
+  enrichInventoriesWithNavStock,
 };

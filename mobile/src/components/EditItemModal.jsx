@@ -13,6 +13,7 @@ export default function EditItemModal({
   showEditItemModal,
   setShowEditItemModal,
   tempEditItem,
+  onAfterEdit,
 }) {
   const editCurrentBill = useCurrentBill((state) => state.editCurrentBill);
   const [description, setDescription] = useState(
@@ -22,8 +23,13 @@ export default function EditItemModal({
     tempEditItem?.quantity?.toString() || "1",
   );
   const [catatan, setCatatan] = useState(tempEditItem?.catatan || "");
+  const [harga, setHarga] = useState(
+    tempEditItem?.RpHargaDasar != null
+      ? String(tempEditItem.RpHargaDasar)
+      : "",
+  );
 
-  const handleEditConfirm = () => {
+  const handleEditConfirm = async () => {
     if (quantity === "" || parseInt(quantity) < 1) {
       ToastAndroid?.show(
         "Quantity tidak boleh kurang dari 1",
@@ -31,15 +37,41 @@ export default function EditItemModal({
       );
       return;
     }
+
+    const parsedHarga = parseFloat(String(harga).replace(/,/g, ""));
+    if (!Number.isFinite(parsedHarga) || parsedHarga < 0) {
+      ToastAndroid?.show("Harga tidak valid", ToastAndroid.SHORT);
+      return;
+    }
+
+    const qty = parseInt(quantity, 10);
+    const originalHarga = parseFloat(tempEditItem.RpHargaDasar);
+    const priceEdited =
+      Boolean(tempEditItem?.priceEdited) ||
+      (Number.isFinite(originalHarga) && parsedHarga !== originalHarga);
+    const quantityChanged =
+      Boolean(tempEditItem?.quantityChanged) ||
+      qty !== Number(tempEditItem?.quantity);
+
     const newItem = {
       ...tempEditItem,
       description: description,
-      quantity: parseInt(quantity),
+      quantity: qty,
       catatan: catatan,
-      totalRp: parseFloat(tempEditItem.RpHargaDasar) * parseInt(quantity),
+      RpHargaDasar: parsedHarga,
+      RpHargaLowest:
+        tempEditItem?.RpHargaLowest != null
+          ? Number(tempEditItem.RpHargaLowest)
+          : tempEditItem?.RpHargaLowest,
+      priceEdited,
+      quantityChanged,
+      totalRp: parsedHarga * qty,
     };
     editCurrentBill(newItem);
     setShowEditItemModal(false);
+    if (typeof onAfterEdit === "function") {
+      await onAfterEdit(newItem, tempEditItem);
+    }
   };
 
   return (
@@ -70,6 +102,37 @@ export default function EditItemModal({
               placeholder="Item name"
               value={description}
               onChangeText={(text) => setDescription(text)}
+            />
+          </View>
+
+          {/* Edit Harga (retail) */}
+          <View>
+            <Text className="text-xs font-semibold mb-2">
+              Edit Harga (Rp retail)
+            </Text>
+            {tempEditItem?.RpHargaLowest != null && (
+              <Text className="text-[10px] text-gray-500 mb-2 text-center">
+                Harga web: Rp{" "}
+                {Number(tempEditItem.RpHargaLowest).toLocaleString("id-ID")}
+              </Text>
+            )}
+            <TextInput
+              style={{
+                borderWidth: 1,
+                padding: 10,
+                borderRadius: 10,
+                borderColor: "#ccc",
+                textAlign: "center",
+                height: 40,
+              }}
+              keyboardType="number-pad"
+              placeholder="Harga satuan"
+              value={harga}
+              onChangeText={(text) => {
+                if (text === "" || /^\d*\.?\d*$/.test(text)) {
+                  setHarga(text);
+                }
+              }}
             />
           </View>
 

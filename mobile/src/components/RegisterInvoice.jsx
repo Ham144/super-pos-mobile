@@ -1,11 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, Text, ToastAndroid } from "react-native";
-import { useCurrentBill, useFiturEnabled, useSyncSetting } from "../store";
+import { View, Text, ToastAndroid, Alert } from "react-native";
+import { getIsEnabledFitur, editLinesStateless } from "../api";
+import {
+  useCurrentBill,
+  useFiturEnabled,
+  useSyncSetting,
+  useOutlet,
+} from "../store";
 import EditItemModal from "./EditItemModal";
 import { useQuery } from "@tanstack/react-query";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import BillHistoryModal from "./BillHistoryModal";
-import { getIsEnabledFitur } from "../api";
 import CustomerFormModal from "./AddCustomerModal";
 import { enumCustomerDialog } from "../dir/enumList";
 import DetailModal from "./DetailModal";
@@ -89,6 +94,56 @@ const RegisterInvoice = ({ fullWidth = false }) => {
     setShowEditItemModal(true);
     setTempEditItem(item);
   }, []);
+
+  const { outlet } = useOutlet();
+
+  const syncNavUndoAfterLineChange = useCallback(
+    async (nextBill, removeSkus = []) => {
+      if (
+        outlet?.mode !== "stateless" ||
+        !isPrintedCustomerBilling ||
+        done ||
+        !_id
+      ) {
+        return;
+      }
+      try {
+        await editLinesStateless({
+          invoiceId: _id,
+          currentBill: nextBill,
+          diskon,
+          removeSkus,
+        });
+        setIsPrintedCustomerBilling(false);
+        ToastAndroid?.show(
+          "Perubahan dikirim ke NAV (undo shipment). Cetak bill ulang.",
+          ToastAndroid.LONG,
+        );
+      } catch (error) {
+        const msg =
+          error?.response?.data?.message ||
+          error?.message ||
+          "Gagal undo shipment NAV";
+        Alert.alert("Gagal sync edit ke NAV", msg);
+      }
+    },
+    [
+      outlet?.mode,
+      isPrintedCustomerBilling,
+      done,
+      _id,
+      diskon,
+      setIsPrintedCustomerBilling,
+    ],
+  );
+
+  const handleAfterEditItem = useCallback(
+    async () => {
+      const nextBill = useCurrentBill.getState().currentBill || [];
+      await syncNavUndoAfterLineChange(nextBill);
+    },
+    [syncNavUndoAfterLineChange],
+  );
 
   // Custom hooks
   const { isCalculating, cebelumDiskon, setelahDiskon } = useBillCalculations();
@@ -334,7 +389,14 @@ const RegisterInvoice = ({ fullWidth = false }) => {
           />
 
           <View className="flex-1 min-h-0">
-            <BillItems onEditItem={handleEditBillItem} />
+            <BillItems
+              onEditItem={handleEditBillItem}
+              onRemoveItem={async (item) => {
+                useCurrentBill.getState().removeFromCurrentBill(item);
+                const nextBill = useCurrentBill.getState().currentBill || [];
+                await syncNavUndoAfterLineChange(nextBill, [item.sku]);
+              }}
+            />
 
             <BillAdjustmentsPanel
               promoEnabled={promoEnabled}
@@ -389,6 +451,7 @@ const RegisterInvoice = ({ fullWidth = false }) => {
           showEditItemModal={showEditItemModal}
           setShowEditItemModal={setShowEditItemModal}
           tempEditItem={tempEditItem}
+          onAfterEdit={handleAfterEditItem}
         />
       )}
       {isShowNomorTransaksiModal && (

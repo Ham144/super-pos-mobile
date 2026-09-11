@@ -367,10 +367,6 @@ export const syncDiskonPromoVoucherInventories = async (isOnline) => {
     }
   }
 
-  //Ambil data dari AsyncStorage terlebih dahulu dengan await
-  //jika key data AsyncStorage tidak ditemukan berarti belum di initialisasi
-  //tapi kalau ada key tapi isinya undefined atau [] maka memang tidak ada, maka lanjutkan mengupdate yang lain saja
-
   // Get userInfo safely with proper error handling
   let userInfo;
   try {
@@ -386,6 +382,59 @@ export const syncDiskonPromoVoucherInventories = async (isOnline) => {
     await AsyncStorage.removeItem("outlet");
     await AsyncStorage.removeItem("token");
     return;
+  }
+
+  if (!userInfo) {
+    console.log("gagal mengambil user, coba login ulang");
+    ToastAndroid?.show(
+      "Gagal mengambil user, coba login ulang",
+      ToastAndroid.SHORT,
+    );
+    return null;
+  }
+
+  // Always refresh outlet from server currentOutlet before sync decisions
+  let updatedOutlet = null;
+  try {
+    const outletRes = await getOuletByUserId(userInfo._id);
+    if (outletRes?.data) {
+      updatedOutlet = outletRes.data;
+      await AsyncStorage.setItem("outlet", JSON.stringify(updatedOutlet));
+      const { useOutlet } = await import("./store");
+      await useOutlet.getState().setOutlet(updatedOutlet);
+    }
+  } catch (error) {
+    console.log("Gagal refresh outlet sebelum sync:", error);
+  }
+
+  if (!updatedOutlet) {
+    try {
+      const raw = await AsyncStorage.getItem("outlet");
+      updatedOutlet = raw ? JSON.parse(raw) : null;
+    } catch {
+      updatedOutlet = null;
+    }
+  }
+
+  // Stateless: no sync-offline-mode / inventory dump. Catalog is live.
+  if (updatedOutlet?.mode === "stateless") {
+    await AsyncStorage.setItem("inventories", JSON.stringify([]));
+    console.log(
+      "Stateless outlet: skip sync-offline-mode & inventory dump ✅",
+    );
+    if (Platform.OS === "android") {
+      ToastAndroid.show(
+        "Mode stateless: sync dump dilewati",
+        ToastAndroid.SHORT,
+      );
+    }
+    return {
+      newOutletData: updatedOutlet,
+      newUserInfoData: userInfo,
+      newInventoryData: [],
+      favoritedInventorySkus: [],
+      removedInventorySkus: [],
+    };
   }
 
   const updatedPromos =
@@ -435,31 +484,11 @@ export const syncDiskonPromoVoucherInventories = async (isOnline) => {
       : [];
   const updatedBill = billStorage;
 
-  let updatedOutlet = await AsyncStorage.getItem("outlet");
-  if (updatedOutlet) {
-    try {
-      updatedOutlet = JSON.parse(updatedOutlet);
-    } catch (error) {
-      console.log("Error parsing outlet:", error);
-      updatedOutlet = null;
-    }
-  }
-
   const paymentMethod =
     (await AsyncStorage.getItem("paymentMethod")) &&
     (await AsyncStorage.getItem("paymentMethod")) != "undefined"
       ? JSON.parse(await AsyncStorage.getItem("paymentMethod"))
       : [];
-
-  //cek apakah userInfo ada
-  if (!userInfo) {
-    console.log("gagal mengambil user, coba login ulang");
-    ToastAndroid?.show(
-      "Gagal mengambil user, coba login ulang",
-      ToastAndroid.SHORT,
-    );
-    return null;
-  }
 
   //jika terdapat lastSyncTime maka artinya inisialisasi, perlu ambil semua data dari db
   const lastSyncTime = await AsyncStorage.getItem("lastSyncTime");
@@ -629,13 +658,16 @@ export const syncDiskonPromoVoucherInventories = async (isOnline) => {
     }
 
     //jika tidak ada outlet di AsyncStorage maka ambil dari BE
-    if (!updatedOutlet || updatedOutlet?.namaOutlet == "") {
+    // (updatedOutlet already refreshed from currentOutlet above; keep as newOutletData)
+    if (updatedOutlet) {
+      data.newOutletData = updatedOutlet;
+    } else if (!updatedOutlet || updatedOutlet?.namaOutlet == "") {
       console.log("inisialisasi outlet");
       const token = await AsyncStorage.getItem("token");
       try {
         const response = await axios.get(
           `${await getBaseUrl()}/api/v1/outlet/getOutlet/${
-            data?.newUserInfoData?._id
+            data?.newUserInfoData?._id || userInfo?._id
           }`,
           {
             headers: {
@@ -860,7 +892,7 @@ export const syncDiskonPromoVoucherInventories = async (isOnline) => {
     };
 
     const response = await axios.post(
-      `${await getBaseUrl()}/api/v1/sinkronisasi/syncDiskonPromoVoucher`,
+      `${await getBaseUrl()}/api/v1/sinkronisasi/sync-offline-mode`,
       body,
       {
         headers: {
@@ -2632,10 +2664,20 @@ export const getUserInfo = async () => {
     );
     return response?.data;
   } catch (error) {
-    console.log(
-      error,
-      "Error getUserInfo, gagal mendapatkan userInfo maak login ulang",
-    );
+    const code = error?.response?.data?.code;
+    const message =
+      error?.response?.data?.message ||
+      "Error getUserInfo, gagal mendapatkan userInfo — login ulang";
+    console.log(error, message);
+    if (code === "OUTLET_REQUIRED" || code === "OUTLET_ACCESS_REVOKED") {
+      return {
+        userInfo: null,
+        outlet: null,
+        code,
+        message,
+      };
+    }
+    return null;
   }
 };
 
@@ -2686,3 +2728,60 @@ export const endOfDayBySku = async (params) => {
   );
   return response.data;
 };
+
+/** Stateless outlet bill flow — NOT sync-offline-mode */
+export const cetakBillStateless = async (bill) => {
+  const response = await axios.post(
+    `${await getBaseUrl()}/api/v1/stateless/cetak-bill`,
+    { bill },
+    { headers: await getMobileAuthHeaders() },
+  );
+  return response.data;
+};
+
+export const approveDiscountStateless = async ({ invoiceId, approved = true }) => {
+  const response = await axios.post(
+    `${await getBaseUrl()}/api/v1/stateless/approve-discount`,
+    { invoiceId, approved },
+    { headers: await getMobileAuthHeaders() },
+  );
+  return response.data;
+};
+
+export const editLinesStateless = async ({
+  invoiceId,
+  currentBill,
+  diskon,
+  removeSkus,
+}) => {
+  const response = await axios.post(
+    `${await getBaseUrl()}/api/v1/stateless/edit-lines`,
+    { invoiceId, currentBill, diskon, removeSkus },
+    { headers: await getMobileAuthHeaders() },
+  );
+  return response.data;
+};
+
+export const bayarStateless = async ({
+  invoiceId,
+  paymentMethod,
+  nomorTransaksi,
+  tanggalBayar,
+}) => {
+  const response = await axios.post(
+    `${await getBaseUrl()}/api/v1/stateless/bayar`,
+    { invoiceId, paymentMethod, nomorTransaksi, tanggalBayar },
+    { headers: await getMobileAuthHeaders() },
+  );
+  return response.data;
+};
+
+export const voidBillStateless = async ({ invoiceId }) => {
+  const response = await axios.post(
+    `${await getBaseUrl()}/api/v1/stateless/void`,
+    { invoiceId },
+    { headers: await getMobileAuthHeaders() },
+  );
+  return response.data;
+};
+

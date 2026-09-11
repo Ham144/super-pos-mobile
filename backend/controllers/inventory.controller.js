@@ -12,6 +12,29 @@ import { parseRpHargaDasar } from "../utils/parseRpHargaDasar.js";
 import { prepareBulkInventoryUpdates } from "../utils/prepareBulkInventoryUpdates.js";
 import { resolveSkuFromReq } from "../utils/resolveSku.js";
 import { csvCell, parseCsvFile } from "../utils/csvDelimiter.js";
+import { enrichInventoriesWithNavStock } from "../utils/soapNav/client.js";
+import { NAV_SOAP_OPERATIONS } from "../utils/soapNav/constants.js";
+import {
+  buildSingleInventoryUpdates,
+  resolveActorUserId,
+} from "../utils/inventoryUpdateHelpers.js";
+
+const parseQueryFlag = (value) => {
+  if (value === true || value === 1) return true;
+  if (value === false || value === 0 || value == null || value === "") {
+    return false;
+  }
+  const normalized = String(value).trim().toLowerCase();
+  return normalized === "true" || normalized === "1" || normalized === "yes";
+};
+
+const safeStackTrace = async (payload) => {
+  try {
+    await stackTracingSku(payload);
+  } catch (error) {
+    console.error("stackTracingSku:", error?.message || error);
+  }
+};
 
 //ini untuk buat manual inventory, jarang dipake karena biasanya sudah ada didapat dari api pihak ketiga
 export const registerSingleInventori = async (req, res) => {
@@ -60,14 +83,15 @@ export const registerSingleInventori = async (req, res) => {
       outlet: req.userDB.currentOutlet,
     });
 
-    await stackTracingSku(
-      response._id,
-      req.user.userId,
-      "register single inventory: Membuat item baru dari item_library manual",
-      "spawn",
-      0,
-      response?.quantity || 0,
-    );
+    await safeStackTrace({
+      itemId: String(response._id),
+      userId: resolveActorUserId(req),
+      stackDescription:
+        "register single inventory: Membuat item baru dari item_library manual",
+      category: "spawn",
+      prevQuantity: 0,
+      receivedQuantityTrace: response?.quantity || 0,
+    });
 
     if (promos) {
       const addPromos = promos.map((promoId) => {
@@ -145,213 +169,279 @@ export const toggleDisableInventory = async (req, res) => {
 export const updateSingleInventori = async (req, res) => {
   const {
     sku,
-    isDisabled,
-    quantity,
-    RpHargaDasar,
-    barcodeItem,
-    description,
-    brand,
     promosToAdd,
     promosToDelete,
     diskonsToAdd,
     diskonsToDelete,
     voucherToBlock,
     voucherToOpenBlock,
-  } = req.body;
+  } = req.body || {};
 
-  if (!sku)
+  if (!sku || !String(sku).trim()) {
     return res
       .status(400)
       .json({ message: "tidak berhasil memperbarui, sku diperlukan" });
+  }
+
+  const outletId = req.userDB?.currentOutlet;
+  if (!outletId) {
+    return res.status(400).json({
+      message: "currentOutlet belum diset, switch/pilih outlet dulu",
+    });
+  }
+
   try {
     const item = await InventoryRefrensi.findOne({
-      sku: sku.trim(),
-      outlet: req.userDB.currentOutlet,
+      sku: String(sku).trim(),
+      outlet: outletId,
     });
 
     if (!item) {
-      return res
-        .status(404)
-        .json({ success: false, message: "SKU tidak ditemukan." });
-    }
-
-    const hargaBaru = parseRpHargaDasar(RpHargaDasar);
-    if (hargaBaru === null || hargaBaru < 0) {
-      return res.status(400).json({
-        message:
-          "gagal memperbarui inventory, harga tidak boleh kurang dari 0 atau tidak valid",
+      return res.status(404).json({
+        success: false,
+        message: "SKU tidak ditemukan di outlet aktif.",
       });
     }
 
-    const numericQuantity =
-      typeof quantity === "string" ? parseInt(quantity) : quantity;
-
-    if (numericQuantity !== undefined && numericQuantity !== item.quantity) {
-      const category =
-        numericQuantity > item.quantity ? "increase" : "decrease";
-
-      if (numericQuantity != item.quantity) {
-        await stackTracingSku(
-          sku,
-          req.user.userId,
-          "update single inventory: Mengubah quantity",
-          category,
-          item.quantity,
-          numericQuantity,
-        );
-      }
+    const built = buildSingleInventoryUpdates(req.body, item);
+    if (!built.ok) {
+      return res.status(400).json({
+        success: false,
+        message: built.errors[0] || "data update tidak valid",
+        errors: built.errors,
+      });
     }
 
-    // Update fields
-    item.quantity =
-      numericQuantity !== undefined ? numericQuantity : item.quantity;
-    item.RpHargaDasar = hargaBaru;
-    item.isDisabled = isDisabled ?? item.isDisabled;
-    item.barcodeItem = barcodeItem ?? item.barcodeItem;
-    item.description = description ?? item.description;
-    item.brand = brand ?? item.brand;
-
+    Object.assign(item, built.$set);
     await item.save();
 
-    if (promosToDelete) {
+    if (built.quantityChange) {
+      await safeStackTrace({
+        itemId: String(item._id),
+        userId: resolveActorUserId(req),
+        stackDescription: "update single inventory: Mengubah quantity",
+        category: built.quantityChange.category,
+        prevQuantity: built.quantityChange.prev,
+        receivedQuantityTrace: built.quantityChange.next,
+      });
+    }
+
+    const skuKey = item.sku;
+
+    if (Array.isArray(promosToDelete) && promosToDelete.length) {
       await Promise.all(
         promosToDelete.map((promoId) =>
           DaftarPromo.updateOne(
-            { _id: promoId }, // Filter berdasarkan ID promo
-            { $pull: { skuList: sku } }, // Hapus sku dari skuList jika ada
+            { _id: promoId },
+            { $pull: { skuList: skuKey } },
           ),
         ),
       );
     }
 
-    if (promosToAdd) {
+    if (Array.isArray(promosToAdd) && promosToAdd.length) {
       await Promise.all(
         promosToAdd.map((promoId) =>
           DaftarPromo.updateOne(
-            { _id: promoId }, // Filter berdasarkan ID promo
-            { $addToSet: { skuList: sku } }, // Tambahkan sku ke skuList jika belum ada
+            { _id: promoId },
+            { $addToSet: { skuList: skuKey } },
           ),
         ),
       );
     }
 
-    if (diskonsToAdd) {
+    if (Array.isArray(diskonsToAdd) && diskonsToAdd.length) {
       await Promise.all(
         diskonsToAdd.map((diskonId) =>
           DaftartDiskon.updateOne(
             { _id: diskonId },
-            { $addToSet: { skuTanpaSyarat: sku } },
+            { $addToSet: { skuTanpaSyarat: skuKey } },
           ),
         ),
       );
     }
 
-    if (diskonsToDelete) {
+    if (Array.isArray(diskonsToDelete) && diskonsToDelete.length) {
       await Promise.all(
         diskonsToDelete.map((diskonId) =>
           DaftartDiskon.updateOne(
             { _id: diskonId },
-            { $pull: { skuTanpaSyarat: sku } },
+            { $pull: { skuTanpaSyarat: skuKey } },
           ),
         ),
       );
     }
 
-    if (voucherToBlock) {
+    if (Array.isArray(voucherToBlock) && voucherToBlock.length) {
       await Promise.all(
         voucherToBlock.map((voucherId) =>
           DaftarVoucher.updateOne(
             { _id: voucherId },
-            { $addToSet: { skuPengecualian: sku } },
+            { $addToSet: { skuPengecualian: skuKey } },
           ),
         ),
       );
     }
 
-    if (voucherToOpenBlock) {
+    if (Array.isArray(voucherToOpenBlock) && voucherToOpenBlock.length) {
       await Promise.all(
         voucherToOpenBlock.map((voucherId) =>
           DaftarVoucher.updateOne(
             { _id: voucherId },
-            { $pull: { skuPengecualian: sku } },
+            { $pull: { skuPengecualian: skuKey } },
           ),
         ),
       );
     }
 
-    return res.json({ message: "berhasil memperbarui" });
+    return res.json({
+      success: true,
+      message: "berhasil memperbarui",
+      data: item,
+    });
   } catch (error) {
-    console.log(error);
-    return res.json({ message: "gagal memperbarui" });
+    console.error("updateSingleInventori:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || "gagal memperbarui",
+    });
   }
 };
 
-//(UNTUK WEB) Jangan gunakan ini untuk mobile lagi, rawan rusak karena filter complex
+//(UNTUK WEB) Jangan gunakan ini untuk mobile offline dump.
+// Stateless: qty di-overlay dari NAV (halaman yang terlihat saja).
 export const getAllinventories = async (req, res) => {
-  const {
-    startDate,
-    endDate,
-    page = 1,
-    limit = 100,
-    asc = false,
-    searchKey,
-    brandIds, // filter sekunder di dalam outlet
-    requiredQuantity = false,
-    requiredRpHargaDasar = false,
-    requiredBarcodeItem = false,
-  } = req.query;
+  try {
+    const {
+      startDate,
+      endDate,
+      page = 1,
+      limit = 100,
+      asc = false,
+      searchKey,
+      brandIds, // filter sekunder di dalam outlet
+      requiredQuantity = false,
+      requiredRpHargaDasar = false,
+      requiredRpHargaLowest = false,
+      requiredBarcodeItem = false,
+    } = req.query;
 
-  const outletId = req.userDB.currentOutlet;
+    const outletId = req.userDB?.currentOutlet;
+    if (!outletId) {
+      return res.status(400).json({
+        message: "currentOutlet belum diset, switch/pilih outlet dulu",
+      });
+    }
 
-  // multi-tenant: inventory selalu scoped ke outlet aktif
-  const complex = { outlet: outletId };
+    const outlet = await Outlet.findById(outletId)
+      .select("mode namaOutlet kodeOutlet")
+      .lean();
+    const outletMode = outlet?.mode || null;
+    const isStateless = outletMode === "stateless";
 
-  if (brandIds) {
-    const arrayBrandIds = brandIds?.split(",");
-    const brandList = await Brand.find({
-      _id: { $in: arrayBrandIds },
+    const wantQty = parseQueryFlag(requiredQuantity);
+    const wantPrice = parseQueryFlag(requiredRpHargaDasar);
+    const wantPriceLowest = parseQueryFlag(requiredRpHargaLowest);
+    const wantBarcode = parseQueryFlag(requiredBarcodeItem);
+    const sortAsc = parseQueryFlag(asc);
+
+    // multi-tenant: inventory selalu scoped ke outlet aktif
+    const complex = { outlet: outletId };
+
+    if (brandIds) {
+      const arrayBrandIds = String(brandIds)
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean);
+      if (arrayBrandIds.length > 0) {
+        const brandList = await Brand.find({
+          _id: { $in: arrayBrandIds },
+        });
+        const brandName = brandList.map((brand) => brand.name);
+        if (brandName.length > 0) {
+          complex.brand = { $in: brandName };
+        }
+      }
+    }
+
+    if (searchKey) {
+      complex.$or = [
+        { sku: { $regex: searchKey, $options: "i" } },
+        { description: { $regex: searchKey, $options: "i" } },
+      ];
+    }
+
+    if (startDate || endDate) {
+      complex.updatedAt = {};
+      if (startDate) {
+        complex.updatedAt.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        complex.updatedAt.$lte = new Date(endDate);
+      }
+    }
+    // Mongo qty biasanya 0 untuk katalog seed; filter stok lokal hanya untuk offline
+    if (wantQty && !isStateless) {
+      complex.quantity = { $gte: 1 };
+    }
+    if (wantPrice) {
+      complex.RpHargaDasar = {
+        $gt: mongoose.Types.Decimal128.fromString("0"),
+      };
+    } if (wantPriceLowest) {
+      complex.RpHargaLowest = {
+        $gt: mongoose.Types.Decimal128.fromString("0"),
+      };
+    }
+    if (wantBarcode) {
+      complex.barcodeItem = { $nin: [null, ""] };
+    }
+   
+
+    const pageNum = Math.max(1, Number(page) || 1);
+    const pageLimit = Math.max(1, Number(limit) || 100);
+    const totalItems = await InventoryRefrensi.countDocuments(complex);
+    const totalPages = Math.ceil(totalItems / pageLimit) || 0;
+    const hasMore = pageNum * pageLimit < totalItems;
+
+    let data = await InventoryRefrensi.find(complex)
+      .populate("outlet", "namaOutlet kodeOutlet")
+      .limit(pageLimit)
+      .skip((pageNum - 1) * pageLimit)
+      .sort({ updatedAt: sortAsc ? 1 : -1 })
+      .lean();
+
+    let stockSource = "local";
+    let navError = null;
+
+    if (isStateless && data.length) {
+      const enriched = await enrichInventoriesWithNavStock(outletId, data, {
+        operationKey: NAV_SOAP_OPERATIONS.GET_STATELESS_INVENTORY,
+      });
+      data = enriched.inventories;
+      stockSource = enriched.stockSource;
+      navError = enriched.navError;
+    }
+
+    return res.json({
+      message: "berhasil",
+      data,
+      totalItems,
+      totalPages,
+      page: pageNum,
+      limit: pageLimit,
+      hasMore,
+      nextPage: hasMore ? pageNum + 1 : null,
+      outletMode,
+      stockSource,
+      ...(navError ? { navError } : {}),
     });
-    const brandName = brandList.map((brand) => brand.name);
-    if (brandName.length > 0) {
-      complex.brand = { $in: brandName };
-    }
+  } catch (error) {
+    console.error("getAllinventories:", error);
+    return res.status(500).json({
+      message: error.message || "gagal mengambil inventories",
+    });
   }
-
-  if (searchKey) {
-    complex.$or = [
-      { sku: { $regex: searchKey, $options: "i" } },
-      { description: { $regex: searchKey, $options: "i" } },
-    ];
-  }
-
-  if (startDate || endDate) {
-    complex.updatedAt = {};
-    if (startDate) {
-      complex.updatedAt.$gte = new Date(startDate);
-    }
-    if (endDate) {
-      complex.updatedAt.$lte = new Date(endDate);
-    }
-  }
-  if (requiredQuantity) {
-    complex.quantity = { $gte: 1 };
-  }
-  if (requiredRpHargaDasar) {
-    complex.RpHargaDasar = { $gt: mongoose.Types.Decimal128.fromString("0") };
-  }
-  if (requiredBarcodeItem) {
-    complex.barcodeItem = { $ne: null };
-  }
-
-  const totalItems = await InventoryRefrensi.countDocuments(complex);
-  const totalPages = Math.ceil(totalItems / Number(limit));
-  const data = await InventoryRefrensi.find(complex)
-    .populate("outlet", "namaOutlet kodeOutlet")
-    .limit(Number(limit))
-    .skip((Number(page) - 1) * Number(limit))
-    .sort({ updatedAt: asc ? -1 : 1 });
-
-  return res.json({ message: "berhasil", data, totalItems, totalPages });
 };
 
 // eksekusi bulk update/setelah validasi baris import
@@ -406,14 +496,14 @@ const runBulkInventoryUpdate = async (req, res, updates) => {
   for (const item of prepared) {
     if (item.isNew) {
       traceSummary.spawn++;
-      await stackTracingSku(
-        item.sku,
-        req.user.userId,
-        "Update Bulk Price - Bulk Import",
-        "spawn",
-        0,
-        item.quantity,
-      );
+      await safeStackTrace({
+        itemId: item.sku,
+        userId: resolveActorUserId(req),
+        stackDescription: "Update Bulk Price - Bulk Import",
+        category: "spawn",
+        prevQuantity: 0,
+        receivedQuantityTrace: item.quantity,
+      });
       continue;
     }
 
@@ -432,14 +522,14 @@ const runBulkInventoryUpdate = async (req, res, updates) => {
           : "other";
 
     traceSummary[category]++;
-    await stackTracingSku(
-      item.sku,
-      req.user.userId,
-      "Update Bulk Price - Bulk Import",
+    await safeStackTrace({
+      itemId: item.sku,
+      userId: resolveActorUserId(req),
+      stackDescription: "Update Bulk Price - Bulk Import",
       category,
       prevQuantity,
-      receivedQuantity,
-    );
+      receivedQuantityTrace: receivedQuantity,
+    });
   }
 
   return res.json({
@@ -550,7 +640,8 @@ export const getInventoryById = async (req, res) => {
 };
 
 // mobile: halaman inventory dari InventoryRefrensi (sumber katalog).
-// offline: dipakai dump ke AsyncStorage; stateless: fetch partial/live per page.
+// offline: dump ke AsyncStorage (Mongo qty) — JANGAN enrich SOAP di sini saat dump penuh.
+// stateless: fetch partial/live per page + overlay qty NAV.
 export const getAllinventoriesMobile = async (req, res) => {
   const {
     startDate,
@@ -561,7 +652,9 @@ export const getAllinventoriesMobile = async (req, res) => {
   } = req.query;
 
   const outletId = req.userDB.currentOutlet;
-  const myOutlet = await Outlet.findById(outletId).select("mode");
+  const myOutlet = await Outlet.findById(outletId).select("mode").lean();
+  const outletMode = myOutlet?.mode || null;
+  const isStateless = outletMode === "stateless";
 
   const complex = {
     isDisabled: { $ne: true },
@@ -584,16 +677,42 @@ export const getAllinventoriesMobile = async (req, res) => {
     }
   }
 
+  const pageNum = Math.max(1, Number(page) || 1);
+  const pageLimit = Math.max(1, Number(limit) || 50);
   const totalItems = await InventoryRefrensi.countDocuments(complex);
-  const data = await InventoryRefrensi.find(complex)
-    .limit(Number(limit))
-    .skip((Number(page) - 1) * Number(limit))
+  const totalPages = Math.ceil(totalItems / pageLimit) || 0;
+  const hasMore = pageNum * pageLimit < totalItems;
+
+  let data = await InventoryRefrensi.find(complex)
+    .limit(pageLimit)
+    .skip((pageNum - 1) * pageLimit)
     .sort({ updatedAt: -1 });
+
+  let stockSource = "local";
+  let navError = null;
+
+  // Hanya live page stateless — offline dump tetap Mongo quantity.
+  // Todo: gunakan GetInventoryByLocationMultiple untuk partial yang terlihat di layar.
+  if (isStateless && data.length) {
+    const enriched = await enrichInventoriesWithNavStock(outletId, data, {
+      operationKey: NAV_SOAP_OPERATIONS.GET_INVENTORY_BY_LOCATION_MULTIPLE,
+    });
+    data = enriched.inventories;
+    stockSource = enriched.stockSource;
+    navError = enriched.navError;
+  }
 
   return res.json({
     message: "berhasil",
     data,
     totalItems,
-    outletMode: myOutlet?.mode || null,
+    totalPages,
+    page: pageNum,
+    limit: pageLimit,
+    hasMore,
+    nextPage: hasMore ? pageNum + 1 : null,
+    outletMode,
+    stockSource,
+    ...(navError ? { navError } : {}),
   });
 };

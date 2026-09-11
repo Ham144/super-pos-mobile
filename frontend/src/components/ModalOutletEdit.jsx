@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  AlertTriangle,
   Building2,
   Clock,
   CreditCard,
@@ -140,7 +141,16 @@ export default function ModalOutletEdit({
           return;
         }
         setExternalProductForm({
-          url: data.url || "",
+          url: (() => {
+            const raw = data.url || "";
+            try {
+              const parsed = new URL(raw);
+              parsed.search = "";
+              return parsed.toString();
+            } catch {
+              return raw.split("?")[0];
+            }
+          })(),
           searchKey: data.searchKey || "",
           pageLimit: data.pageLimit || 1000,
           x_api_key: "",
@@ -158,6 +168,18 @@ export default function ModalOutletEdit({
 
   if (!outlet) return null;
 
+  const stripUrlQuery = (rawUrl) => {
+    const value = (rawUrl || "").trim();
+    if (!value) return "";
+    try {
+      const parsed = new URL(value);
+      parsed.search = "";
+      return parsed.toString();
+    } catch {
+      return value.split("?")[0];
+    }
+  };
+
   const hasSeededCatalog = Boolean(externalProductForm.lastSyncedAt);
 
   const handleSeedOrRenewCatalog = async () => {
@@ -165,25 +187,27 @@ export default function ModalOutletEdit({
       toast.error("Simpan outlet dulu sebelum inisialisasi katalog");
       return;
     }
-    if (!externalProductForm.url?.trim()) {
+    const cleanUrl = stripUrlQuery(externalProductForm.url);
+    if (!cleanUrl) {
       toast.error("URL sumber referensi produk wajib diisi");
       return;
     }
-    
+
     setIsSeedingCatalog(true);
     try {
       const res = await syncExternalProductByOutlet(outlet._id, {
-        url: externalProductForm.url.trim(),
+        url: cleanUrl,
         searchKey: externalProductForm.searchKey?.trim() || "",
         pageLimit: Number(externalProductForm.pageLimit) || 1000,
         ...(externalProductForm.x_api_key
           ? { x_api_key: externalProductForm.x_api_key }
           : {}),
       });
-      
+
       const summary = res?.data;
       setExternalProductForm((prev) => ({
         ...prev,
+        url: cleanUrl,
         x_api_key: "",
         hasApiKey: prev.hasApiKey || Boolean(prev.x_api_key),
         lastSyncedAt: summary?.syncedAt || new Date().toISOString(),
@@ -193,9 +217,12 @@ export default function ModalOutletEdit({
           skipped: summary?.skipped || 0,
         },
       }));
-      
+
       toast.success(
-        `Katalog → InventoryRefrensi · fetch: ${summary?.totalFetched ?? 0}, baru: ${summary?.created || 0}, update: ${summary?.updated || 0}, skip: ${summary?.skipped || 0}`,
+        `Katalog → InventoryRefrensi · fetch: ${summary?.totalFetched ?? 0}, baru: ${summary?.created || 0}, update: ${summary?.updated || 0}, skip: ${summary?.skipped || 0}` +
+          (summary?.searchKeyUsed
+            ? ` · filter: "${summary.searchKeyUsed}"`
+            : " · full catalog"),
       );
     } catch (err) {
       toast.error(
@@ -312,11 +339,26 @@ export default function ModalOutletEdit({
             {activeTab === "umum" && (
               <>
                 <Field label="Kode Outlet (NAV Location)" icon={Store}>
+                  <div
+                    role="alert"
+                    className="alert alert-warning flex items-start gap-2.5 py-2.5 px-3 mb-2 rounded-lg"
+                  >
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <span className="text-xs text-gray-700 leading-relaxed">
+                      Kode ini harus sesuai dengan{" "}
+                      <strong>NAV location</strong> agar stok yang ditampilkan
+                      benar.
+                    </span>
+                  </div>
                   <input
                     type="text"
-                    className="input input-bordered w-full bg-gray-50"
+                    className="input input-bordered w-full bg-gray-50 font-mono tracking-wide"
+                    placeholder="Contoh: OUTLET-01"
                     value={outlet.kodeOutlet || ""}
-                    readOnly
+                    onChange={(e) =>
+                      setOutlet((p) => ({ ...p, kodeOutlet: e.target.value }))
+                    }
+                    required
                   />
                 </Field>
                 <Field label="Nama Outlet" icon={Store}>
@@ -493,7 +535,9 @@ export default function ModalOutletEdit({
                       <p className="text-xs text-amber-900/80 mt-1">
                         Dipakai sekali saat outlet baru, atau saat Anda minta
                         perbarui katalog. Hasilnya disimpan ke InventoryRefrensi
-                        (app tetap standalone setelah itu).
+                        (app tetap standalone setelah itu). Kosongkan searchKey
+                        untuk katalog penuh; isi hanya jika ingin filter
+                        (contoh: QRH092). Jangan pakai kodeOutlet.
                       </p>
                     </div>
                     {hasSeededCatalog && (
@@ -505,7 +549,7 @@ export default function ModalOutletEdit({
 
                   <input
                     type="url"
-                    placeholder="URL API sumber produk"
+                    placeholder="URL API sumber produk (tanpa ?searchKey=...)"
                     className="input input-bordered w-full bg-white"
                     value={externalProductForm.url}
                     onChange={(e) =>
@@ -518,7 +562,7 @@ export default function ModalOutletEdit({
                   <div className="grid grid-cols-2 gap-3">
                     <input
                       type="text"
-                      placeholder="searchKey API (contoh: 10) — bukan kodeOutlet"
+                      placeholder="searchKey — kosong = full catalog"
                       className="input input-bordered bg-white"
                       value={externalProductForm.searchKey}
                       onChange={(e) =>

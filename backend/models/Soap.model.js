@@ -60,10 +60,21 @@ const soapSchema = new mongoose.Schema(
       type: [operationSchema],
       default: [],
     },
+    // legacy top-level; prefer defaults.noSeries
     noSeries: {
       type: String,
       default: "",
-    }
+    },
+    defaults: {
+      noSeries: {
+        type: String,
+        default: "",
+      },
+      sellToCustNo: {
+        type: String,
+        default: "",
+      },
+    },
   },
   {
     timestamps: true,

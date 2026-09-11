@@ -1,4 +1,3 @@
-import { useNavigation } from "expo-router";
 import {
   SquareChevronRight,
   Calendar,
@@ -17,15 +16,19 @@ import {
   AppState,
   ScrollView,
   ActivityIndicator,
+  Alert,
+  Platform,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import { DrawerActions } from "@react-navigation/native";
 import SettlementPrint from "../components/SettlementPrint";
 import { useOnlineSync } from "../hooks/useOnlineSync";
-import { endOfDayBySku } from "../api";
+import { endOfDayBySku, voidBillStateless } from "../api";
+import { useOutlet } from "../store";
 
-const AktivitasScreen = () => {
-  const navigation = useNavigation();
+const AktivitasScreen = ({ navigation }) => {
+  const { outlet } = useOutlet();
   const [transactions, setTransactions] = useState([]);
   const [filteredTransactions, setFilteredTransactions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -265,6 +268,48 @@ const AktivitasScreen = () => {
     }
 
     const handleToggleRequestingVoid = async (id) => {
+      // Stateless: void goes to NAV (GetSalesShipmentLines → WsUndoShipment), not syncMobileRoute
+      if (outlet?.mode === "stateless") {
+        Alert.alert(
+          "Void Transaksi",
+          "Batalkan seluruh SKU di bill ini di NAV (WsUndoShipment)?",
+          [
+            { text: "Batal", style: "cancel" },
+            {
+              text: "Void",
+              style: "destructive",
+              onPress: async () => {
+                try {
+                  await voidBillStateless({ invoiceId: id });
+                  const updatedTransactions = transactions.map((bill) =>
+                    bill._id === id
+                      ? {
+                          ...bill,
+                          isVoid: true,
+                          requestingVoid: false,
+                          isChanged: true,
+                          sync: true,
+                        }
+                      : bill,
+                  );
+                  setTransactions(updatedTransactions);
+                  await AsyncStorage.setItem(
+                    "bills",
+                    JSON.stringify(updatedTransactions),
+                  );
+                } catch (error) {
+                  Alert.alert(
+                    "Gagal Void",
+                    error?.response?.data?.message || error?.message || "Error",
+                  );
+                }
+              },
+            },
+          ],
+        );
+        return;
+      }
+
       const updatedTransactions = transactions.map((bill) =>
         bill._id === id
           ? { ...bill, requestingVoid: !bill?.requestingVoid, isChanged: true }
@@ -662,7 +707,7 @@ const AktivitasScreen = () => {
 
       <View className="absolute bottom-14 left-0">
         <TouchableOpacity
-          onPress={() => navigation.openDrawer()}
+          onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
           className="px-2 bg-blue-300 py-4 rounded-r-lg items-center justify-center"
         >
           <Text>

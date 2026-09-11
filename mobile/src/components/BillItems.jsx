@@ -73,7 +73,7 @@ const BillItem = memo(
     prev.item?.limitQuantity === next.item?.limitQuantity
 );
 
-export const BillItems = memo(({ onEditItem }) => {
+export const BillItems = memo(({ onEditItem, onRemoveItem }) => {
   const currentBill = useCurrentBill((state) => state.currentBill);
   const removeFromCurrentBill = useCurrentBill(
     (state) => state.removeFromCurrentBill
@@ -82,9 +82,13 @@ export const BillItems = memo(({ onEditItem }) => {
 
   const handleRemoveItem = useCallback(
     (item) => {
+      if (typeof onRemoveItem === "function") {
+        onRemoveItem(item);
+        return;
+      }
       removeFromCurrentBill(item);
     },
-    [removeFromCurrentBill]
+    [onRemoveItem, removeFromCurrentBill]
   );
 
   const handleEditItem = useCallback(

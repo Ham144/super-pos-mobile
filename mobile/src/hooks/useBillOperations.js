@@ -7,6 +7,8 @@ import {
   printCetakHelper,
   createMidtransPayment,
   getMidtransPaymentStatus,
+  cetakBillStateless,
+  bayarStateless,
 } from "../api";
 import excactTimeString from "../utils/excactTimeString";
 import { useLoading, useOutlet, useSyncSetting } from "../store";
@@ -604,6 +606,81 @@ export const useBillOperations = ({
         return;
       }
 
+      // --- outlet.mode === "stateless": NAV ship (or pending discount) ---
+      // offline mode keeps the existing local-only path below.
+      if (outlet?.mode === "stateless") {
+        if (!isOnline) {
+          Alert.alert(
+            "Offline",
+            "Outlet mode stateless membutuhkan koneksi untuk cetak bill (NAV).",
+          );
+          setLoadingPrinting(false);
+          return;
+        }
+
+        try {
+          const navResult = await cetakBillStateless({
+            _id,
+            kodeInvoice,
+            currentBill,
+            diskon,
+            promo,
+            futureVoucher,
+            implementedVoucher,
+            subTotal: cebelumDiskon,
+            total: setelahDiskon,
+            salesPerson,
+            spg,
+            customer,
+            paymentMethod,
+            nomorTransaksi,
+            tanggalBayar,
+            createdAt: new Date().toISOString(),
+          });
+
+          if (navResult?.action === "pending_discount_approval") {
+            await handleSimpanBillOffline({
+              isPrintedCustomerBilling: false,
+              done: false,
+              isPrintedKwitansi: false,
+              tanggalBayar: tanggalBayar,
+            });
+            // persist approval flag on local bill copy
+            try {
+              const billsStr = await AsyncStorage.getItem("bills");
+              const bills = billsStr ? JSON.parse(billsStr) : [];
+              const idx = bills.findIndex((b) => b._id === _id);
+              if (idx !== -1) {
+                bills[idx] = {
+                  ...bills[idx],
+                  discountApprovalStatus: "pending",
+                  sync: true,
+                };
+                await AsyncStorage.setItem("bills", JSON.stringify(bills));
+              }
+            } catch (_) {
+              /* ignore local flag errors */
+            }
+
+            Alert.alert(
+              "Menunggu Approve Discount",
+              navResult.message ||
+                "Harga retail di bawah harga web. Bill disimpan tanpa hit SOAP sampai disetujui.",
+            );
+            setLoadingPrinting(false);
+            return;
+          }
+        } catch (error) {
+          const msg =
+            error?.response?.data?.message ||
+            error?.message ||
+            "Gagal SalesOrderAutoPostingShip";
+          Alert.alert("Gagal Cetak Bill (NAV)", msg);
+          setLoadingPrinting(false);
+          return;
+        }
+      }
+
       if (isOnline) {
         const multiConfig = JSON.parse(
           await AsyncStorage.getItem("printerConfigs"),
@@ -894,6 +971,27 @@ export const useBillOperations = ({
         try {
           // Cetak kwitansi
           setLoadingPrinting(true);
+
+          // Stateless: post invoice to NAV before printing receipt
+          if (outlet?.mode === "stateless" && !done) {
+            try {
+              await bayarStateless({
+                invoiceId: _id,
+                paymentMethod,
+                nomorTransaksi: paymentReference || nomorTransaksi,
+                tanggalBayar: tanggalBayar || new Date().toISOString(),
+              });
+            } catch (navErr) {
+              const msg =
+                navErr?.response?.data?.message ||
+                navErr?.message ||
+                "Gagal WsPostInvoiceSO";
+              Alert.alert("Gagal Bayar (NAV)", msg);
+              setLoadingPrinting(false);
+              return;
+            }
+          }
+
           for (let i = 0; i < 2; i++) {
             const isFirst = i === 0;
             await printCetakKwitansi(config, bill, time, outlet, isFirst);
@@ -921,12 +1019,14 @@ export const useBillOperations = ({
             });
 
             if (isTotallySuccessful) {
-              // Jika belum done, update inventaris dan statistik
-              const updateResult = await updateInventoryAndStats();
-              if (!updateResult) {
-                console.warn(
-                  "Beberapa data inventaris atau statistik mungkin tidak diperbarui dengan benar",
-                );
+              // Offline mode: update local inventaris. Stateless: stock already via NAV ship.
+              if (outlet?.mode !== "stateless") {
+                const updateResult = await updateInventoryAndStats();
+                if (!updateResult) {
+                  console.warn(
+                    "Beberapa data inventaris atau statistik mungkin tidak diperbarui dengan benar",
+                  );
+                }
               }
 
               setDone(true);
@@ -936,8 +1036,11 @@ export const useBillOperations = ({
                 "Kwitansi berhasil dicetak",
                 ToastAndroid.SHORT,
               );
-              //langsung sync setelah berhasil cetak kwitansi pertama kali
-              if (autoSyncSetelahKwitansiPertama) {
+              // Offline auto-sync only — never syncMobileRoute for stateless
+              if (
+                outlet?.mode !== "stateless" &&
+                autoSyncSetelahKwitansiPertama
+              ) {
                 await handleSinkronisasi();
                 ToastAndroid?.show("Auto sync berhasil", ToastAndroid.SHORT);
                 clearSale();
