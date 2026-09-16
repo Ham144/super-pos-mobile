@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import RegisterInvoice from "../components/RegisterInvoice";
 import { Plus } from "lucide-react-native";
-import { useCurrentBill, useInventoriesOffline, useLoading } from "../store";
+import { useCurrentBill, useInventoriesOffline, useLoading, useOutlet } from "../store";
 import OptionInventoriesModal from "../components/OptionInventoriesModal";
 import FilterInventories from "../components/FilterInventories";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -45,6 +45,7 @@ const LibrariesScreen = () => {
   const { _id, addToCurrentBill, createCurrentBill, done } = useCurrentBill();
   const { inventoriesOffline: inventoriList, setInventoriesOffline } =
     useInventoriesOffline();
+  const { outlet } = useOutlet();
 
   const [filteredInventories, setFilteredInventories] = useState([]);
   const searchTimeout = useRef(null);
@@ -167,11 +168,13 @@ const LibrariesScreen = () => {
       setLastUpdateTimestamp(lastUpdate || "");
       setUserInfo(userInfoRaw ? JSON.parse(userInfoRaw) : null);
 
-      let mode = null;
-      try {
-        mode = outletRaw ? JSON.parse(outletRaw)?.mode : null;
-      } catch (_) {
-        mode = null;
+      let mode = outlet?.mode || null;
+      if (!mode) {
+        try {
+          mode = outletRaw ? JSON.parse(outletRaw)?.mode : null;
+        } catch (_) {
+          mode = null;
+        }
       }
       setOutletMode(mode || "offline");
 
@@ -194,7 +197,7 @@ const LibrariesScreen = () => {
     };
 
     bootstrap();
-  }, [fetchLiveInventories, setInventoriesOffline]);
+  }, [fetchLiveInventories, setInventoriesOffline, outlet?._id, outlet?.mode]);
 
   useEffect(() => {
     if (isStateless) return;

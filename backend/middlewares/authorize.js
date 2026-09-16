@@ -1,6 +1,9 @@
 import UserRefrensi from "../models/User.model.js";
 import { noAuthOriginalUrl } from "./authenticate.js";
-import { hasOutletAccess } from "../utils/outletAccess.js";
+import {
+  hasOutletAccess,
+  repairCurrentOutletIfNeeded,
+} from "../utils/outletAccess.js";
 
 const AUTH_USER_FIELDS =
   "_id username roleName blockedAccess currentOutlet isDisabled";
@@ -12,6 +15,7 @@ const skipOutletAccessCheck = (url) => {
   const path = normalizeUrl(url);
   return (
     path === "/api/v1/auth/logout" ||
+    path === "/api/v1/auth/getuserinfo" ||
     path === "/api/v1/outlet/simple-outlet-list" ||
     path.startsWith("/api/v1/outlet/switch-outlet/")
   );
@@ -45,14 +49,23 @@ const authorize = async (req, res, next) => {
 
     const allowWithoutOutlet = skipOutletAccessCheck(req.originalUrl);
 
-    if (!userDB.currentOutlet && !allowWithoutOutlet) {
-      return res.status(403).json({
-        message: "Akun belum terhubung ke outlet, pilih outlet dulu",
-        code: "OUTLET_REQUIRED",
-      });
-    }
+    if (!allowWithoutOutlet) {
+      // Auto-repair: missing / revoked currentOutlet → first outlet in kasirList
+      if (
+        !userDB.currentOutlet ||
+        !(await hasOutletAccess(userDB._id, userDB.currentOutlet))
+      ) {
+        await repairCurrentOutletIfNeeded(userDB);
+      }
 
-    if (userDB.currentOutlet && !allowWithoutOutlet) {
+      if (!userDB.currentOutlet) {
+        return res.status(403).json({
+          message:
+            "Akun belum terhubung ke outlet. Assign user ke kasirList outlet dulu.",
+          code: "OUTLET_REQUIRED",
+        });
+      }
+
       const allowed = await hasOutletAccess(userDB._id, userDB.currentOutlet);
       if (!allowed) {
         return res.status(403).json({

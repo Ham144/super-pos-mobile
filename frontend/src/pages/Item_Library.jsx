@@ -1,5 +1,10 @@
-import React, { useState, useMemo, useEffect } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  useInfiniteQuery,
+} from "@tanstack/react-query";
 import {
   getAllinventories,
   updateSingleInventory,
@@ -73,8 +78,6 @@ import {
   Percent,
   Gift,
   Image as ImageIcon,
-  ChevronLeft,
-  ChevronRight,
   HelpCircle,
   Save,
 } from "lucide-react";
@@ -113,11 +116,9 @@ const ItemLibrary = () => {
   //zustand
   const { filter, setFilter } = useFilter();
 
-  // Menambahkan state untuk pagination
-  const [currentPage, setCurrentPage] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
-  const [totalPages, setTotalPages] = useState(0);
-  const itemsPerPage = filter.limit || 100;
+  const itemsPerPage = filter.limit || 50;
+  const tableScrollRef = useRef(null);
   const [sortConfig, setSortConfig] = useState({
     field: null,
     direction: "asc",
@@ -129,20 +130,15 @@ const ItemLibrary = () => {
       setFilter({ ...filter, searchKey: searchFromUrl });
     }
   }, [searchFromUrl]);
-  
-  // Reset currentPage ketika filter berubah (kecuali perubahan skip)
+
+  // Reset infinite query saat filter berubah (jangan loop jika sudah page 1)
   useEffect(() => {
-    // Jika filter berubah (selain skip dan page, yang berubah karena pagination)
-    if (!filter.skip || filter.skip === 0) {
-      console.log("Resetting page to 1");
-      setCurrentPage(1);
-      // Ensure skip is also reset while preserving other filter properties
-      setFilter({
-        ...filter,
-        page: 1,
-        skip: 0,
-      });
-    }
+    if ((filter.page || 1) === 1 && (filter.skip || 0) === 0) return;
+    setFilter({
+      ...filter,
+      page: 1,
+      skip: 0,
+    });
   }, [
     filter.searchKey,
     filter.startDate,
@@ -188,51 +184,92 @@ const ItemLibrary = () => {
     },
   });
 
-  // When inventory data is loaded and we have a searchKey, select the matching inventory
+  // Infinite scroll — API tetap page/limit (kompatibel dump offline mobile)
+  const inventoryFilterKey = useMemo(() => {
+    const key = {
+      searchKey: filter.searchKey || "",
+      startDate: filter.startDate || "",
+      endDate: filter.endDate || "",
+      limit: itemsPerPage,
+      asc: filter.asc === true || filter.asc === "true",
+    };
+    if (filter.brandIds?.length) key.brandIds = filter.brandIds;
+    if (filter.requiredQuantity) key.requiredQuantity = true;
+    if (filter.requiredRpHargaDasar) key.requiredRpHargaDasar = true;
+    if (filter.requiredBarcodeItem) key.requiredBarcodeItem = true;
+    return key;
+  }, [
+    filter.searchKey,
+    filter.startDate,
+    filter.endDate,
+    filter.asc,
+    filter.brandIds,
+    filter.requiredQuantity,
+    filter.requiredRpHargaDasar,
+    filter.requiredBarcodeItem,
+    itemsPerPage,
+  ]);
+
   const {
-    data: inventoryData,
+    data: inventoryPages,
     refetch: refetchInventories,
     isLoading: inventoryLoading,
-  } = useQuery({
-    queryKey: [
-      "inventories",
-      {
-        ...filter,
-        page: currentPage,
-        skip: (currentPage - 1) * itemsPerPage,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+    isError: inventoryError,
+    error: inventoryQueryError,
+  } = useInfiniteQuery({
+    queryKey: ["inventories", inventoryFilterKey],
+    queryFn: ({ pageParam }) =>
+      getAllinventories({
+        ...inventoryFilterKey,
+        page: pageParam,
+        skip: (pageParam - 1) * itemsPerPage,
         limit: itemsPerPage,
-      },
-    ],
-    queryFn: (filter) => getAllinventories(filter),
+      }),
+    getNextPageParam: (lastPage, allPages) => {
+      if (lastPage?.nextPage) return lastPage.nextPage;
+      if (lastPage?.hasMore) return allPages.length + 1;
+      return undefined;
+    },
+    initialPageParam: 1,
   });
 
-  // Extract inventories and pagination info from response
-  const inventories = inventoryData?.data || [];
+  const inventories = useMemo(
+    () => inventoryPages?.pages?.flatMap((p) => p?.data || []) || [],
+    [inventoryPages],
+  );
+
+  const stockSource = inventoryPages?.pages?.[0]?.stockSource;
+  const outletMode = inventoryPages?.pages?.[0]?.outletMode;
+  const navError = inventoryPages?.pages?.find((p) => p?.navError)?.navError;
 
   useEffect(() => {
-    function initilizePagination() {
-      setTotalItems(inventoryData?.totalItems);
-      setTotalPages(inventoryData?.totalPages);
+    if (inventoryError) {
+      toast.error(
+        inventoryQueryError?.response?.data?.message ||
+          inventoryQueryError?.message ||
+          "Gagal memuat inventori",
+      );
     }
+  }, [inventoryError, inventoryQueryError]);
 
-    initilizePagination();
-  }, [inventoryData, inventories, itemsPerPage, totalPages]);
+  useEffect(() => {
+    const last = inventoryPages?.pages?.[inventoryPages.pages.length - 1];
+    if (last?.totalItems != null) setTotalItems(last.totalItems);
+  }, [inventoryPages]);
 
-  // Handle page change
-  const handlePageChange = (newPage) => {
-    // Update current page state
-    setCurrentPage(newPage);
-
-    // Calculate skip value based on page and itemsPerPage
-    const skipValue = (newPage - 1) * itemsPerPage;
-
-    // Update filter dengan skip yang benar dan page
-    setFilter({
-      ...filter,
-      page: newPage,
-      skip: skipValue,
-    });
-  };
+  const handleTableScroll = useCallback(
+    (e) => {
+      const el = e.currentTarget;
+      if (!el || isFetchingNextPage || !hasNextPage) return;
+      const nearBottom =
+        el.scrollTop + el.clientHeight >= el.scrollHeight - 120;
+      if (nearBottom) fetchNextPage();
+    },
+    [fetchNextPage, hasNextPage, isFetchingNextPage],
+  );
 
   useEffect(() => {
     if (searchFromUrl && inventories) {
@@ -320,19 +357,15 @@ const ItemLibrary = () => {
     },
     mutationKey: ["inventories"],
     onSuccess: async (response) => {
-      // Pastikan response sukses
-      if (response) {
-        toast.success("berhasil Update");
-        closeInventoryModal();
-        // Invalidate dan refetch dengan await
-        await queryClient.invalidateQueries(["inventories"]);
-        await refetchInventories();
-      } else {
-        toast.error(
-          response?.response?.data?.message ||
-            "Gagal mengupdate: Tidak ada response dari server",
-        );
+      const payload = response?.data;
+      if (payload?.success === false) {
+        toast.error(payload?.message || "Gagal mengupdate");
+        return;
       }
+      toast.success(payload?.message || "berhasil Update");
+      closeInventoryModal();
+      await queryClient.invalidateQueries({ queryKey: ["inventories"] });
+      await refetchInventories();
     },
     onError: (error) => {
       toast.error(error?.response?.data?.message || "gagal mengupdate");
@@ -590,60 +623,6 @@ const ItemLibrary = () => {
     setTempVoucherTerputus([]);
   };
 
-  const generatePaginationNumbers = (
-    currentPage,
-    totalPages,
-    maxVisiblePages = 5,
-  ) => {
-    const pages = [];
-    const startPage = Math.max(
-      1,
-      currentPage - Math.floor(maxVisiblePages / 2),
-    );
-    const endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
-
-    // Add first page
-    if (startPage > 1) {
-      pages.push(1);
-      if (startPage > 2) {
-        pages.push("..."); // Ellipsis for pages before the current block
-      }
-    }
-
-    // Add pages around the current page
-    for (let i = startPage; i <= endPage; i++) {
-      pages.push(i);
-    }
-
-    // Add last page
-    if (endPage < totalPages) {
-      if (endPage < totalPages - 1) {
-        pages.push("..."); // Ellipsis for pages after the current block
-      }
-      pages.push(totalPages);
-    }
-
-    if (
-      pages.length > maxVisiblePages + (pages.includes("...") ? 1 : 0) &&
-      totalPages > maxVisiblePages
-    ) {
-    }
-
-    const uniquePages = [];
-    let prevPage = null;
-    for (const page of pages) {
-      if (page === "..." && prevPage === "...") {
-        continue; // Skip consecutive ellipses
-      }
-      uniquePages.push(page);
-      prevPage = page;
-    }
-
-    return uniquePages;
-  };
-
-  const paginationItems = generatePaginationNumbers(currentPage, totalPages, 5); // Mengatur 5 halaman terlihat
-
   const sortedInventories = useMemo(() => {
     const sorted = [...inventories];
     if (sortConfig.field !== null) {
@@ -839,10 +818,15 @@ const ItemLibrary = () => {
           </div>
 
           {/* Filter */}
-          <div className="px-4 pb-3">
+          <div className="px-1 pb-3">
             <FilterInventories
               onChange={(value) =>
-                setFilter({ ...filter, searchKey: value.searchKey })
+                setFilter({
+                  ...filter,
+                  ...value,
+                  page: 1,
+                  skip: 0,
+                })
               }
             />
           </div>
@@ -854,10 +838,18 @@ const ItemLibrary = () => {
             <div className="badge badge-primary m-4 bg-blue-100 text-blue-700 border-blue-200">
               <Info className="w-4 h-4 mr-1" />
               Klik 2x untuk mengedit
+              {totalItems ? ` · ${totalItems} item` : ""}
+              {outletMode === "stateless"
+                ? ` · stok ${stockSource === "nav" ? "NAV live" : "lokal"}`
+                : ""}
+              {navError ? ` · NAV: ${navError}` : ""}
             </div>
 
-            <div className="overflow-x-auto max-h-[calc(100vh-250px)] overflow-y-auto">
-              <table className="w-full">
+            <div
+              ref={tableScrollRef}
+              onScroll={handleTableScroll}
+              className="overflow-x-auto max-h-[calc(100vh-250px)] overflow-y-auto"
+            >              <table className="w-full">
                 <thead className="bg-gradient-to-r from-blue-50 to-blue-100/50 sticky top-0 z-10">
                   <tr>
                     {[
@@ -887,8 +879,14 @@ const ItemLibrary = () => {
                         align: "center",
                       },
                       {
-                        label: "Harga Dasar",
+                        label: "Harga Retail",
                         field: "RpHargaDasar",
+                        sortable: true,
+                        align: "right",
+                      },
+                      {
+                        label: "Harga Web",
+                        field: "RpHargaLowest",
                         sortable: true,
                         align: "right",
                       },
@@ -905,7 +903,7 @@ const ItemLibrary = () => {
                         sortable: false,
                         align: "center",
                       },
-                    ].map((col, idx) => (
+                    ].filter((col) => !(outletMode !== "stateless" && col.field === "RpHargaLowest")  ).map((col, idx) => (
                       <th
                         key={idx}
                         onClick={() => col.sortable && requestSort(col.field)}
@@ -975,7 +973,14 @@ const ItemLibrary = () => {
                         </td>
                         <td className="px-4 py-3 text-center">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                            {item?.quantity}
+                            <span className="tabular-nums font-medium">
+                              {item?.quantity ?? 0}
+                            </span>
+                            {item?.stockSource === "nav" ? (
+                              <span className="ml-1 text-[10px] uppercase text-emerald-600">
+                                NAV
+                              </span>
+                            ) : null}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-center">
@@ -1007,6 +1012,18 @@ const ItemLibrary = () => {
                             )}
                           </span>
                         </td>
+                        {outletMode === "stateless" && <td className="px-4 py-3 text-right font-mono">
+                          <span className="text-blue-600 font-semibold">
+                            {Intl.NumberFormat("id-ID", {
+                              style: "currency",
+                              currency: "IDR",
+                              minimumFractionDigits: 0,
+                            }).format(
+                              parseRpHargaDasar(item.RpHargaLowest) ?? 0,
+                            )}
+                          </span>
+                        </td>
+                        }
                         <td className="px-4 py-3 text-sm">
                           <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded-md text-xs">
                             {item.brand || "-"}
@@ -1056,8 +1073,8 @@ const ItemLibrary = () => {
               </table>
             </div>
 
-            {/* Loading */}
-            {inventoryLoading && (
+            {/* Loading / infinite scroll footer */}
+            {(inventoryLoading || isFetchingNextPage) && (
               <div className="flex justify-center py-8">
                 <div className="relative">
                   <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
@@ -1065,56 +1082,22 @@ const ItemLibrary = () => {
               </div>
             )}
 
-            {/* Pagination */}
-            {totalPages >= 1 && (
-              <div className="flex justify-center py-4 bg-gradient-to-r from-blue-50/50 to-white border-t border-blue-100">
-                <div className="flex gap-2">
-                  <button
-                    className="p-2 rounded-lg border border-gray-200 hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    onClick={() =>
-                      handlePageChange(Math.max(1, currentPage - 1))
-                    }
-                    disabled={currentPage === 1}
-                  >
-                    <ChevronLeft className="w-5 h-5 text-gray-600" />
-                  </button>
+            {!inventoryLoading && hasNextPage && (
+              <div className="flex justify-center py-3 border-t border-blue-100">
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost text-blue-700"
+                  onClick={() => fetchNextPage()}
+                  disabled={isFetchingNextPage}
+                >
+                  Muat lebih banyak
+                </button>
+              </div>
+            )}
 
-                  {paginationItems.map((item, index) => {
-                    if (item === "...") {
-                      return (
-                        <span
-                          key={`ellipsis-${index}`}
-                          className="px-3 py-2 text-gray-500"
-                        >
-                          ...
-                        </span>
-                      );
-                    }
-                    return (
-                      <button
-                        key={item}
-                        className={`w-10 h-10 rounded-lg font-medium transition-colors ${
-                          item === currentPage
-                            ? "bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg"
-                            : "border border-gray-200 hover:bg-blue-50 text-gray-700"
-                        }`}
-                        onClick={() => handlePageChange(item)}
-                      >
-                        {item}
-                      </button>
-                    );
-                  })}
-
-                  <button
-                    className="p-2 rounded-lg border border-gray-200 hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    onClick={() =>
-                      handlePageChange(Math.min(totalPages, currentPage + 1))
-                    }
-                    disabled={currentPage === totalPages}
-                  >
-                    <ChevronRight className="w-5 h-5 text-gray-600" />
-                  </button>
-                </div>
+            {!inventoryLoading && !hasNextPage && inventories.length > 0 && (
+              <div className="text-center text-xs text-gray-400 py-3 border-t border-blue-50">
+                Semua item dimuat
               </div>
             )}
           </div>
@@ -1217,7 +1200,7 @@ const ItemLibrary = () => {
 
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-gray-700">
-                    Quantity
+                    Quantity <span className="text-xs text-gray-500">note: jika ini dari nav, editan quantity akan tertimpa oleh stock dari nav.</span>
                   </label>
                   <input
                     type="text"

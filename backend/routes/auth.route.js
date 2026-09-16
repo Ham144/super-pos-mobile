@@ -620,25 +620,32 @@ router.put("/updateUser", async (req, res) => {
 
 router.get("/getUserInfo", async (req, res) => {
   try {
-    if (req.userId) {
-      const userDB = await UserRefrensi.findById(req.userId)
-        .select(
-          "_id username blockedAccess roleName totalHargaPenjualan totalQuantityPenjualan targetHargaPenjualan targetQuantityPenjualan kodeKasir currentOutlet",
-        )
-        .populate("currentOutlet", "_id kodeOutlet namaOutlet mode");
-      if (!userDB) {
-        return res.status(404).json({ message: "akun tidak ditemukan" });
-      }
-      if (userDB?.isDisabled == true) {
-        return res
-          .status(403)
-          .json({ message: "Akun anda telah dinonaktifkan" });
-      } else {
-        return res.json({ userInfo: userDB, outlet: userDB.currentOutlet });
-      }
-    } else {
+    if (!req.userId) {
       return res.status(401).json({ message: "Tidak ditemukan data" });
     }
+
+    let userDB = await UserRefrensi.findById(req.userId).select(
+      "_id username blockedAccess roleName totalHargaPenjualan totalQuantityPenjualan targetHargaPenjualan targetQuantityPenjualan kodeKasir currentOutlet isDisabled",
+    );
+    if (!userDB) {
+      return res.status(404).json({ message: "akun tidak ditemukan" });
+    }
+    if (userDB.isDisabled === true) {
+      return res
+        .status(403)
+        .json({ message: "Akun anda telah dinonaktifkan" });
+    }
+
+    await repairCurrentOutletIfNeeded(userDB);
+    await userDB.populate(
+      "currentOutlet",
+      "_id kodeOutlet namaOutlet mode",
+    );
+
+    return res.json({
+      userInfo: userDB,
+      outlet: userDB.currentOutlet || null,
+    });
   } catch (error) {
     return res.status(401).json({ message: "Tidak ditemukan data" });
   }

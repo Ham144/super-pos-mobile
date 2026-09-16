@@ -86,4 +86,62 @@ export const extractXmlTagValue = (xml, tagName) => {
   return match?.[1]?.trim() ?? null;
 };
 
+export const decodeXmlEntities = (value = "") =>
+  String(value)
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
+
+const extractNestedTag = (block, tagName) => {
+  const regex = new RegExp(
+    `<(?:\\w+:)?${tagName}[^>]*>([^<]*)</(?:\\w+:)?${tagName}>`,
+    "i",
+  );
+  const match = block.match(regex);
+  return match?.[1]?.trim() ?? null;
+};
+
+/**
+ * Parse InventoryPerLocation rows from NAV SOAP / XmlPort payload.
+ * Accepts raw SOAP envelope or return_value (possibly entity-encoded).
+ */
+export const parseInventoryPerLocationList = (xmlOrEncoded) => {
+  if (!xmlOrEncoded) return [];
+
+  let xml = String(xmlOrEncoded);
+  if (xml.includes("&lt;") || xml.includes("&gt;")) {
+    xml = decodeXmlEntities(xml);
+  }
+
+  const returnValue = extractXmlTagValue(xml, "return_value");
+  if (returnValue) {
+    xml = returnValue.includes("&lt;")
+      ? decodeXmlEntities(returnValue)
+      : returnValue;
+  }
+
+  const blocks = xml.match(
+    /<(?:\w+:)?InventoryPerLocation\b[\s\S]*?<\/(?:\w+:)?InventoryPerLocation>/gi,
+  );
+  if (!blocks?.length) return [];
+
+  return blocks
+    .map((block) => {
+      const itemNo = extractNestedTag(block, "ItemNo");
+      const locationCode = extractNestedTag(block, "LocationCode");
+      const quantityRaw = extractNestedTag(block, "Quantity");
+      if (!itemNo) return null;
+
+      const quantity = Number(String(quantityRaw ?? "0").replace(/,/g, ""));
+      return {
+        itemNo: itemNo.trim(),
+        locationCode: locationCode?.trim() || null,
+        quantity: Number.isFinite(quantity) ? quantity : 0,
+      };
+    })
+    .filter(Boolean);
+};
+
 export default callSoapNav;

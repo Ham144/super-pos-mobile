@@ -1,37 +1,48 @@
 import axios from "axios";
 import { BASE_URL } from "./constant";
 
-export const getAllinventories = async (queryKey) => {
-  const extractedQuery = queryKey.queryKey[1];
-
+const buildInventoryQueryString = (extractedQuery = {}) => {
   const queries = [];
   Object.keys(extractedQuery).forEach((key) => {
-    if (extractedQuery[key] != "") {
-      queries.push(`${key}=${extractedQuery[key]}`);
-    } else {
-      return;
-    }
+    const value = extractedQuery[key];
+    if (value === "" || value === null || value === undefined) return;
+    // jangan kirim false — di query string "false" jadi truthy di backend lama
+    if (value === false) return;
+    if (Array.isArray(value) && value.length === 0) return;
+    queries.push(`${key}=${encodeURIComponent(value)}`);
   });
+  return queries.join("&");
+};
 
-  const url = `${BASE_URL}/api/v1/inventories/getAllinventories?${
-    queries && queries.join("&")
-  }`;
+export const getAllinventories = async (queryKeyOrParams) => {
+  const extractedQuery =
+    queryKeyOrParams?.queryKey?.[1] ?? queryKeyOrParams ?? {};
+
+  const url = `${BASE_URL}/api/v1/inventories/getAllinventories?${buildInventoryQueryString(
+    extractedQuery,
+  )}`;
 
   const response = await axios.get(url, {
     withCredentials: true,
   });
 
-  // Jika response sudah dalam format pagination (memiliki total, totalPages, dll)
+  // Nested pagination shape (legacy)
   if (response?.data?.data?.data) {
     return {
       data: response?.data?.data?.data,
       total: response?.data?.data?.total,
+      totalItems:
+        response?.data?.data?.totalItems ?? response?.data?.data?.total,
       totalPages: response?.data?.totalPages,
       currentPage: response?.data?.currentPage,
+      hasMore: response?.data?.hasMore,
+      nextPage: response?.data?.nextPage,
+      outletMode: response?.data?.outletMode,
+      stockSource: response?.data?.stockSource,
+      navError: response?.data?.navError,
     };
   }
 
-  // Jika belum dalam format pagination, gunakan format lama
   return response.data;
 };
 

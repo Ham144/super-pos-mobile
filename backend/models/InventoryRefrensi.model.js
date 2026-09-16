@@ -15,9 +15,13 @@ const InventoryRefrensiSchema = new mongoose.Schema(
       required: true,
       default: 0,
     },
-    RpHargaDasar: {
+    RpHargaDasar: {//harga retail
       type: mongoose.Schema.Types.Decimal128,
       required: true,
+    },
+    RpHargaLowest: {//harga web
+      type: mongoose.Schema.Types.Decimal128,
+      default: 0,
     },
     barcodeItem: {
       type: String,

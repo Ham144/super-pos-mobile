@@ -4,8 +4,11 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
+  Pressable,
+  useWindowDimensions,
 } from "react-native";
 import React, { useState } from "react";
+import { DrawerActions } from "@react-navigation/native";
 import PengaturanPrinterConfig from "../components/PengaturanPrinterConfig";
 import PengaturanInputBill from "../components/PengaturanInputBill";
 import PengaturanFitur from "../components/PengaturanFitur";
@@ -15,6 +18,8 @@ import PengaturanBackend from "../components/PengaturanBackend";
 import PengaturanAplikasi from "../components/PengaturanAplikasi";
 
 const PengaturanScreen = ({ navigation }) => {
+  const { width } = useWindowDimensions();
+  const isLarge = width >= 1024;
   const [currentTab, setCurrentTab] = useState("pengaturanPrinterConfig");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
@@ -46,88 +51,148 @@ const PengaturanScreen = ({ navigation }) => {
     }
   };
 
+  const showSidebar = isLarge || isSidebarOpen;
+
   return (
-    <View className="flex-row h-full items-center relative">
-      {/* Sidebar - Enhanced for Mobile Overlay */}
-      <View
-        className={`${
-          isSidebarOpen ? "flex" : "hidden"
-        } lg:flex w-64 lg:w-1/4 xl:w-1/5 bg-white rounded-r-3xl h-full px-4 py-20 absolute lg:relative z-[60] lg:z-0 shadow-2xl lg:shadow-none transition-all duration-300 ease-in-out`}
-        style={styles.sidebar}
-      >
-        <ScrollView showsVerticalScrollIndicator={false}>
-          {pengaturanItems.map((item) => (
-            <TouchableOpacity
-              key={item.id}
-              onPress={() => {
-                setCurrentTab(item.id);
-                setIsSidebarOpen(false);
-              }}
-              className={`p-4 mb-3 rounded-2xl transition-colors duration-200 ${
-                currentTab === item.id
-                  ? "bg-blue-600 shadow-md"
-                  : "bg-gray-50 active:bg-gray-100"
-              }`}
-              style={currentTab === item.id ? styles.activeTab : null}
-            >
-              <Text
-                className={`text-sm font-bold ${
-                  currentTab === item.id ? "text-white" : "text-gray-600"
-                }`}
-                style={{ fontFamily: currentTab === item.id ? "gilroyBold" : "gilroyRegular" }}
-              >
-                {item.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+    <View style={styles.root}>
+      {/* StyleSheet only — NativeWind conditional shadow/transition on pressables breaks nav context */}
+      {showSidebar ? (
+        <View style={[styles.sidebar, !isLarge && styles.sidebarOverlay]}>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {pengaturanItems.map((item) => {
+              const active = currentTab === item.id;
+              return (
+                <Pressable
+                  key={item.id}
+                  onPress={() => {
+                    setCurrentTab(item.id);
+                    setIsSidebarOpen(false);
+                  }}
+                  style={[styles.tabItem, active ? styles.tabItemActive : styles.tabItemIdle]}
+                >
+                  <Text
+                    style={[
+                      styles.tabLabel,
+                      active ? styles.tabLabelActive : styles.tabLabelIdle,
+                      { fontFamily: active ? "gilroyBold" : "gilroyRegular" },
+                    ]}
+                  >
+                    {item.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+      ) : null}
+
+      <View style={styles.content}>{renderContent()}</View>
+
+      {!isLarge ? (
+        <TouchableOpacity
+          onPress={() => setIsSidebarOpen((open) => !open)}
+          style={styles.mobileMenuBtn}
+        >
+          <Menu size={24} color="white" />
+        </TouchableOpacity>
+      ) : null}
+
+      <View style={styles.drawerBtnWrap}>
+        <TouchableOpacity
+          onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
+          style={styles.drawerBtn}
+        >
+          <SquareChevronRight size={20} color="white" />
+        </TouchableOpacity>
       </View>
-
-      {/* Content Area - Full screen width on mobile */}
-      <View className="flex-1 p-4 h-full z-0">{renderContent()}</View>
-
-      {/* Mobile Menu Button - Moved to end for Z-Index */}
-      <TouchableOpacity
-        onPress={() => setIsSidebarOpen(!isSidebarOpen)}
-        className="lg:hidden absolute top-4 left-4 bg-blue-600 p-3 rounded-2xl shadow-lg"
-        style={{ elevation: 100, zIndex: 1000 }}
-      >
-        <Menu size={24} color="white" />
-      </TouchableOpacity>
-
-      {/* Drawer Button */}
-      <View className="absolute bottom-14 left-0">
-              <TouchableOpacity
-                onPress={() => navigation.openDrawer()}
-                className="px-2 bg-blue-300 py-4 rounded-r-lg items-center justify-center"
-              >
-                <Text>
-                  <SquareChevronRight size={20} color={"white"} />
-                </Text>
-              </TouchableOpacity>
-            </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    position: "relative",
+  },
   sidebar: {
+    width: 256,
+    height: "100%",
+    backgroundColor: "#ffffff",
+    borderTopRightRadius: 24,
+    borderBottomRightRadius: 24,
+    paddingHorizontal: 16,
+    paddingTop: 80,
+    paddingBottom: 80,
+    zIndex: 60,
     shadowColor: "#000",
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
   },
-  activeTab: {
+  sidebarOverlay: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+  },
+  tabItem: {
+    padding: 16,
+    marginBottom: 12,
+    borderRadius: 16,
+  },
+  tabItemActive: {
+    backgroundColor: "#2563eb",
     shadowColor: "#000",
     shadowOpacity: 0.2,
     shadowRadius: 1.41,
     elevation: 2,
   },
-  drawerButton: {
+  tabItemIdle: {
+    backgroundColor: "#f9fafb",
+  },
+  tabLabel: {
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  tabLabelActive: {
+    color: "#ffffff",
+  },
+  tabLabelIdle: {
+    color: "#4b5563",
+  },
+  content: {
+    flex: 1,
+    padding: 16,
+    height: "100%",
+    zIndex: 0,
+  },
+  mobileMenuBtn: {
+    position: "absolute",
+    top: 16,
+    left: 16,
+    backgroundColor: "#2563eb",
+    padding: 12,
+    borderRadius: 16,
+    elevation: 100,
+    zIndex: 1000,
     shadowColor: "#000",
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
-    elevation: 5,
+  },
+  drawerBtnWrap: {
+    position: "absolute",
+    bottom: 56,
+    left: 0,
+  },
+  drawerBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 16,
+    backgroundColor: "#93c5fd",
+    borderTopRightRadius: 8,
+    borderBottomRightRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });
 

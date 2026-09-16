@@ -5,31 +5,31 @@ import DrawerNavigation from "../navigations/DrawerNavigator.jsx";
 import LoginScreen from "../screens/LoginScreen.jsx";
 import { getUserInfo } from "../api.js";
 import { useOnlineSync } from "../hooks/useOnlineSync.js";
-import * as Updates from 'expo-updates'
+import * as Updates from "expo-updates";
 import { environment } from "../constant.js";
+import { applyServerSession } from "../utils/reconcileOutletSession.js";
 
 export default function Index() {
   const [isAuthenticated, setIsAuthenticated] = useState(null);
   const { data: isOnline } = useOnlineSync();
-  
-    useEffect(() => {
-      async function checkAndApplyUpdates() {
-        if (environment == "development") return;
 
-        try {
-          const update = await Updates.checkForUpdateAsync();
-          if (update.isAvailable) {
-            await Updates.fetchUpdateAsync();
-            await Updates.reloadAsync();
-          }
-        } catch (error) {
-          // Native ON_LOAD sudah handle; gagal di sini biasanya offline sementara
+  useEffect(() => {
+    async function checkAndApplyUpdates() {
+      if (environment == "development") return;
+
+      try {
+        const update = await Updates.checkForUpdateAsync();
+        if (update.isAvailable) {
+          await Updates.fetchUpdateAsync();
+          await Updates.reloadAsync();
         }
+      } catch (error) {
+        // Native ON_LOAD sudah handle; gagal di sini biasanya offline sementara
       }
-      
-      checkAndApplyUpdates();
-    }, []);
+    }
 
+    checkAndApplyUpdates();
+  }, []);
 
   useEffect(() => {
     const checkAuthStatus = async () => {
@@ -38,22 +38,34 @@ export default function Index() {
         setIsAuthenticated(!!token);
         if (token) {
           if (isOnline) {
-            //kalau online periksa validitas token
-            const userInfo = await getUserInfo();
-            if (userInfo) {
-              await AsyncStorage.setItem("userInfo", JSON.stringify(userInfo));
-            } else {
+            const payload = await getUserInfo();
+            if (!payload) {
               setIsAuthenticated(false);
+              return;
             }
+            if (
+              payload.code === "OUTLET_REQUIRED" ||
+              payload.code === "OUTLET_ACCESS_REVOKED"
+            ) {
+              Alert.alert(
+                payload.code === "OUTLET_ACCESS_REVOKED"
+                  ? "Akses outlet dicabut"
+                  : "Outlet diperlukan",
+                payload.message || "Akun belum terhubung ke outlet",
+              );
+              setIsAuthenticated(false);
+              return;
+            }
+            const result = await applyServerSession(payload);
+            setIsAuthenticated(result.ok);
           } else {
-            //kalau offline tidak perlu periksa validitas token
             const userInfo = await AsyncStorage.getItem("userInfo");
             if (userInfo) {
               setIsAuthenticated(true);
             } else {
               Alert?.alert(
                 "Data login tidak Ditemukan dan aplikasi sedang offline",
-                "Hidupkan Koneksi Internet atau cobalah lagi nanti"
+                "Hidupkan Koneksi Internet atau cobalah lagi nanti",
               );
               setIsAuthenticated(false);
             }
@@ -77,15 +89,22 @@ export default function Index() {
   }, [isOnline]);
 
   const handleLoginSuccess = async () => {
-    const userInfoRaw = await getUserInfo();
-    const userInfo = userInfoRaw?.userInfo;
-
-    if (userInfo) {
-      await AsyncStorage.setItem("userInfo", JSON.stringify(userInfo));
-      setIsAuthenticated(true);
-    } else {
+    const payload = await getUserInfo();
+    if (
+      !payload ||
+      payload.code === "OUTLET_REQUIRED" ||
+      payload.code === "OUTLET_ACCESS_REVOKED"
+    ) {
+      Alert.alert(
+        "Outlet diperlukan",
+        payload?.message ||
+          "Akun belum terhubung ke outlet. Minta admin assign ke kasirList.",
+      );
       setIsAuthenticated(false);
+      return;
     }
+    const result = await applyServerSession(payload);
+    setIsAuthenticated(result.ok);
   };
 
   if (isAuthenticated === null) {

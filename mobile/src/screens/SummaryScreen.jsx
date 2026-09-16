@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { TouchableOpacity, Text } from "react-native";
 import { View, ScrollView } from "react-native";
+import { DrawerActions } from "@react-navigation/native";
 import SettlementPrint from "../components/SettlementPrint";
 import EndOfDayskuView from "../components/EndOfDaySkuView";
 import { SquareChevronRight, Calendar } from "lucide-react-native";
@@ -100,7 +101,7 @@ const SummaryScreen = ({ navigation }) => {
       </ScrollView>
       <View className="absolute bottom-14 left-0 z-20">
         <TouchableOpacity
-          onPress={() => navigation.openDrawer()}
+          onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
           className="px-2 bg-blue-300 py-4 rounded-r-lg items-center justify-center"
         >
           <Text>

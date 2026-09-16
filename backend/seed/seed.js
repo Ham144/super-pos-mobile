@@ -375,11 +375,21 @@ const seedSoapNavForOutlets = async (outlets) => {
 };
 
 const seedExternalProductReferences = async (outlets) => {
-  const url = process.env.PRODUCT_REFERENCE_ENDPOINT;
+  const rawUrl = process.env.PRODUCT_REFERENCE_ENDPOINT;
   const xApiKey = process.env.PRODUCT_REFERENCE_X_API_KEY || "";
 
-  if (!url) {
+  if (!rawUrl) {
     return 0;
+  }
+
+  // Simpan base URL tanpa query — searchKey/skip/limit dikontrol saat sync
+  let url = rawUrl;
+  try {
+    const parsed = new URL(rawUrl);
+    parsed.search = "";
+    url = parsed.toString();
+  } catch (_) {
+    url = rawUrl.split("?")[0];
   }
 
   let seeded = 0;
@@ -391,6 +401,7 @@ const seedExternalProductReferences = async (outlets) => {
         $set: {
           outlet: outlet._id,
           url,
+          searchKey: "",
           x_api_key: xApiKey,
           method: "GET",
         },

@@ -125,6 +125,7 @@ export const buildWsPostInvoiceSOXml = ({ docNo }) => {
 export const buildGetInventoryByLocationMultipleXml = ({
   items = [],
   locationCode,
+  operationName = NAV_SOAP_OPERATIONS.GET_INVENTORY_BY_LOCATION_MULTIPLE,
 }) => {
   const inventoryLines = items.map((item) =>
     buildInventoryLineXml({
@@ -134,12 +135,15 @@ export const buildGetInventoryByLocationMultipleXml = ({
     }),
   );
 
+  const op =
+    operationName || NAV_SOAP_OPERATIONS.GET_INVENTORY_BY_LOCATION_MULTIPLE;
+
   const body = [
-    `<GetInventoryByLocationMultiple xmlns="${NAV_CODEUNIT_NS}">`,
+    `<${op} xmlns="${NAV_CODEUNIT_NS}">`,
     "<xml_WSInventory>",
     inventoryLines.join(""),
     "</xml_WSInventory>",
-    "</GetInventoryByLocationMultiple>",
+    `</${op}>`,
   ].join("");
 
   return wrapEnvelope(body);
@@ -157,7 +161,10 @@ export const buildSoapXml = (operationKey, payload = {}) => {
       return buildWsPostInvoiceSOXml(payload);
     case NAV_SOAP_OPERATIONS.GET_INVENTORY_BY_LOCATION_MULTIPLE:
     case NAV_SOAP_OPERATIONS.GET_STATELESS_INVENTORY:
-      return buildGetInventoryByLocationMultipleXml(payload);
+      return buildGetInventoryByLocationMultipleXml({
+        ...payload,
+        operationName: operationKey,
+      });
     default:
       throw new Error(`Operasi SOAP NAV tidak dikenal: ${operationKey}`);
   }

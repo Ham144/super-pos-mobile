@@ -52,10 +52,19 @@ export const saveExternalProductConfigByOutlet = async (req, res) => {
       outlet: outletId,
     });
 
+    let cleanUrl = url.trim();
+    try {
+      const parsed = new URL(cleanUrl);
+      parsed.search = "";
+      cleanUrl = parsed.toString();
+    } catch {
+      cleanUrl = cleanUrl.split("?")[0];
+    }
+
     const updatePayload = {
       outlet: outletId,
-      url: url.trim(),
-      searchKey: searchKey?.trim() || "",
+      url: cleanUrl,
+      searchKey: typeof searchKey === "string" ? searchKey.trim() : "",
       pageLimit: Number(pageLimit) || 1000,
       method: method || "GET",
     };
@@ -130,10 +139,22 @@ export const syncExternalProductByOutlet = async (req, res) => {
 
     // Boleh kirim URL di body saat inisialisasi / renew sekali jalan
     if (url?.trim()) {
+      let cleanUrl = url.trim();
+      try {
+        const parsed = new URL(cleanUrl);
+        parsed.search = "";
+        cleanUrl = parsed.toString();
+      } catch {
+        cleanUrl = cleanUrl.split("?")[0];
+      }
+
       const updatePayload = {
         outlet: outletId,
-        url: url.trim(),
-        searchKey: searchKey?.trim() || config?.searchKey || "",
+        url: cleanUrl,
+        searchKey:
+          typeof searchKey === "string"
+            ? searchKey.trim()
+            : config?.searchKey || "",
         pageLimit: Number(pageLimit) || config?.pageLimit || 1000,
         method: method || config?.method || "GET",
       };

@@ -1,4 +1,3 @@
-import { useNavigation } from "expo-router";
 import { SquareChevronRight, Search } from "lucide-react-native";
 import React, { useEffect, useState } from "react";
 import {
@@ -11,9 +10,9 @@ import {
   RefreshControl,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { DrawerActions } from "@react-navigation/native";
 
-const InventoriScreen = () => {
-  const navigation = useNavigation();
+const InventoriScreen = ({ navigation }) => {
   const [inventories, setInventories] = useState([]);
   const [filteredInventories, setFilteredInventories] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -257,7 +256,7 @@ const InventoriScreen = () => {
 
       <View className="absolute bottom-14 left-0">
         <TouchableOpacity
-          onPress={() => navigation.openDrawer()}
+          onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
           className="px-2 bg-blue-300 py-4 rounded-r-lg items-center justify-center"
         >
           <Text>

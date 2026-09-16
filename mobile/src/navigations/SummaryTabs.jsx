@@ -2,7 +2,7 @@ import React from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { SquareChevronRight } from "lucide-react-native";
 import { Alert, Text, TouchableOpacity, View } from "react-native";
-import { useNavigation } from "expo-router";
+import { DrawerActions } from "@react-navigation/native";
 import MyOutletSummary from "../screens/MyOutletSummary";
 import SpgSummary from "../screens/SpgSummary";
 import DiskonSummary from "../screens/DiskonSummary";
@@ -11,9 +11,7 @@ import PromoSummary from "../screens/PromoSummary";
 
 const Tab = createBottomTabNavigator();
 
-const SummaryTabs = () => {
-	const navigation = useNavigation();
-
+const SummaryTabs = ({ navigation }) => {
 	return (
 		<View className={`flex-1`}>
 			<Tab.Navigator screenOptions={{ headerShown: false }}>
@@ -68,7 +66,7 @@ const SummaryTabs = () => {
 			{/* button untuk buka drawer */}
 			<View className="absolute bottom-14 left-0">
 				<TouchableOpacity
-					onPress={() => navigation.openDrawer()}
+					onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
 					className="px-2 bg-blue-300 py-4 rounded-r-lg  items-center justify-center"
 				>
 					<Text>

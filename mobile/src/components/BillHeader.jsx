@@ -81,7 +81,7 @@ export const BillHeader = ({
       getOutletData();
     }
     fillingDataToShow();
-  }, [lastSyncTime, customerEmail, spg, customerName, paymentMethod]);
+  }, [lastSyncTime, customerEmail, spg, customerName, paymentMethod, outlet?._id]);
 
   return (
     <View>

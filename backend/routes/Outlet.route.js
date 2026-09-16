@@ -138,6 +138,7 @@ router.put("/edit", async (req, res) => {
 
     const updateFields = {
       namaOutlet: req.body.namaOutlet,
+      kodeOutlet: req.body.kodeOutlet,
       description: req.body.description,
       logo: processedLogo,
       namaPerusahaan: req?.body?.namaPerusahaan,

@@ -1,6 +1,4 @@
 import React from "react";
-import { NavigationContainer } from "@react-navigation/native";
-import { NavigationIndependentTree } from "@react-navigation/core";
 import { createDrawerNavigator } from "@react-navigation/drawer";
 import PointOfSaleNavigator from "@/navigations/PointOfSaleNavigator.jsx";
 import AktivitasScreen from "@/screens/AktivitasScreen.jsx";
@@ -10,39 +8,22 @@ import SummaryScreen from "@/screens/SummaryScreen.jsx";
 
 const Drawer = createDrawerNavigator();
 
+/**
+ * Nested under expo-router's NavigationContainer (no second container).
+ * A nested NavigationContainer/IndependentTree breaks screen navigation context.
+ */
 const DrawerNavigator = () => {
   return (
-    <NavigationIndependentTree>
-      <NavigationContainer>
-        <Drawer.Navigator>
-          <Drawer.Screen
-            name="Point of Sale"
-            component={PointOfSaleNavigator}
-            options={{ headerShown: false }}
-          />
-          <Drawer.Screen
-            name="Aktivitas"
-            component={AktivitasScreen}
-            options={{ headerShown: false }}
-          />
-          <Drawer.Screen
-            name="Inventori"
-            component={InventoriScreen}
-            options={{ headerShown: false }}
-          />
-          <Drawer.Screen
-            name="Ringkasan"
-            component={SummaryScreen}
-            options={{ headerShown: false }}
-          />
-          <Drawer.Screen
-            name="Pengaturan"
-            component={PengaturanScreen}
-            options={{ headerShown: false }}
-          />
-        </Drawer.Navigator>
-      </NavigationContainer>
-    </NavigationIndependentTree>
+    <Drawer.Navigator screenOptions={{ headerShown: false }}>
+      <Drawer.Screen
+        name="Point of Sale"
+        component={PointOfSaleNavigator}
+      />
+      <Drawer.Screen name="Aktivitas" component={AktivitasScreen} />
+      <Drawer.Screen name="Inventori" component={InventoriScreen} />
+      <Drawer.Screen name="Ringkasan" component={SummaryScreen} />
+      <Drawer.Screen name="Pengaturan" component={PengaturanScreen} />
+    </Drawer.Navigator>
   );
 };
 

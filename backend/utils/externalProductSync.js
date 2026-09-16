@@ -5,8 +5,13 @@ import BrandRefrensi from "../models/brand.model.js";
 import Outlet from "../models/Outlet.model.js";
 import { parseRpHargaDasar } from "./parseRpHargaDasar.js";
 
-const appendQueryParams = (baseUrl, params) => {
+/** Build request URL; always own searchKey/skip/limit (strip any baked into base URL). */
+export const appendQueryParams = (baseUrl, params) => {
   const url = new URL(baseUrl);
+  ["searchKey", "skip", "limit", "page"].forEach((key) => {
+    url.searchParams.delete(key);
+  });
+
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== "") {
       url.searchParams.set(key, String(value));
@@ -32,20 +37,27 @@ export const ensureInventoryOutletSkuIndex = async () => {
 };
 
 /**
- * External product list item shape (muara / open API):
- * { No, Brand, Description, Description_2, Retail, ... }
+ * External product list item (muara open API):
+ * { No, Brand, Description, Description_2, Retail, Web, ... }
+ * RpHargaDasar ← Retail, RpHargaLowest ← Web
  */
 export const normalizeExternalProduct = (item) => {
   if (!item || typeof item !== "object") return null;
 
-  const sku = String(item.No ?? "").trim();
+  const sku = String(item.No ?? item.no ?? item.SKU ?? item.sku ?? "").trim();
   if (!sku) return null;
+
+  const description = String(
+    item.Description,
+      sku,
+  ).trim();
 
   return {
     sku,
-    description: String(item.Description || item.Description_2 || sku).trim(),
-    RpHargaDasar: parseRpHargaDasar(item.Retail) ?? 0,
-    brand: String(item.Brand ?? "").trim(),
+    description,
+    RpHargaDasar: parseRpHargaDasar(item.Retail ?? item.retail) ?? 0,
+    RpHargaLowest: parseRpHargaDasar(item.Web ?? item.web) ?? 0,
+    brand: String(item.Brand ?? item.brand ?? "").trim(),
     barcodeItem: "",
   };
 };
@@ -64,7 +76,7 @@ export const fetchAllExternalProducts = async ({
   searchKey,
   pageLimit = 1000,
   x_api_key,
-  timeoutMs = 60000,
+  timeoutMs = 120000,
 }) => {
   const headers = {};
   if (x_api_key) {
@@ -73,30 +85,46 @@ export const fetchAllExternalProducts = async ({
 
   const products = [];
   let skip = 0;
+  let reportedTotal = null;
+  const limit = Math.max(1, Number(pageLimit) || 1000);
 
   while (true) {
-    const pageUrl = appendQueryParams(url, {
-      searchKey,
+    const pageParams = {
       skip,
-      limit: pageLimit,
-    });
+      limit,
+    };
+    // kosong = katalog penuh; jangan biarkan searchKey lama menempel di URL
+    if (searchKey) {
+      pageParams.searchKey = searchKey;
+    }
 
+    const pageUrl = appendQueryParams(url, pageParams);
     const response = await axios.get(pageUrl, {
       headers,
       timeout: timeoutMs,
     });
 
     const pageItems = extractProductList(response.data);
+    if (typeof response.data?.total === "number") {
+      reportedTotal = response.data.total;
+    }
+
     if (!pageItems.length) break;
 
     products.push(...pageItems);
 
-    if (pageItems.length < pageLimit) break;
-    skip += pageLimit;
-  }
+    if (pageItems.length < limit) break;
+    if (reportedTotal != null && products.length >= reportedTotal) break;
 
+    skip += limit;
+    if (skip > 200000) break;
+  }
+  
   return products;
 };
+
+const toDecimal128 = (value) =>
+  mongoose.Types.Decimal128.fromString(String(value ?? 0));
 
 export const syncExternalProductsForOutlet = async ({
   outletId,
@@ -106,7 +134,7 @@ export const syncExternalProductsForOutlet = async ({
 }) => {
   await ensureInventoryOutletSkuIndex();
 
-  // searchKey API eksternal ≠ kodeOutlet NAV. Jangan fallback ke kodeOutlet.
+  // searchKey API = filter teks (bukan kodeOutlet). Kosong = ambil semua (~full catalog).
   const resolvedSearchKey = config.searchKey?.trim() || "";
 
   const rawProducts = await fetchAllExternalProducts({
@@ -118,8 +146,8 @@ export const syncExternalProductsForOutlet = async ({
 
   if (!rawProducts.length) {
     throw new Error(
-      `API sumber mengembalikan 0 produk (searchKey="${resolvedSearchKey || "(kosong)"}"). ` +
-        `Cek URL/searchKey — contoh yang bekerja: searchKey=10, bukan kodeOutlet.`,
+      `API sumber mengembalikan 0 produk (searchKey="${resolvedSearchKey || "(kosong = full catalog)"}"). ` +
+        `Kosongkan searchKey untuk katalog penuh, atau isi filter (contoh: QRH092). Jangan pakai kodeOutlet.`,
     );
   }
 
@@ -156,9 +184,8 @@ export const syncExternalProductsForOutlet = async ({
         {
           $set: {
             description: product.description,
-            RpHargaDasar: mongoose.Types.Decimal128.fromString(
-              String(product.RpHargaDasar),
-            ),
+            RpHargaDasar: toDecimal128(product.RpHargaDasar),
+            RpHargaLowest: toDecimal128(product.RpHargaLowest),
             barcodeItem: product.barcodeItem || undefined,
             brand: product.brand || undefined,
             isDisabled: false,
@@ -196,6 +223,7 @@ export const syncExternalProductsForOutlet = async ({
     updated,
     skipped,
     totalFetched: rawProducts.length,
+    searchKeyUsed: resolvedSearchKey || null,
     syncedAt: new Date(),
     userId,
     errors: errors.slice(0, 20),

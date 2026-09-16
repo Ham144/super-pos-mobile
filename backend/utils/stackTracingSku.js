@@ -1,44 +1,44 @@
 // utils/traceStack.js
+import mongoose from "mongoose";
 import StackTraceSku from "../models/StackTraceSku.model.js";
 
 /**
  * Melacak perubahan pada SKU (inventory)
- * @param {String} itemId - ID dari inventory (_id / sku)
- * @param {String} userId - ID user yang melakukan perubahan
- * @param {String} stackDescription - Catatan unik, nama fungsi/fitur
- * @param {'increase'|'decrease'|'spawn'|'other'} category
- * @param {Number} prevQuantity - quantity sebelum perubahan
- * @param {Number} receivedQuantityTrace - perubahan (bisa + atau -)
- * @param {String} invoice - invoice._id //bill._id saat invoice ini di sync
  */
-export async function stackTracingSku(
-  {itemId,
+export async function stackTracingSku({
+  itemId,
   userId,
   stackDescription,
   category,
   prevQuantity,
-  receivedQuantityTrace, //quantity terbarunya bukan perngurangan atau penambahannya
-  invoice}
-) {
+  receivedQuantityTrace, // quantity terbaru (bukan delta)
+  invoice,
+} = {}) {
   try {
     if (prevQuantity != 0 && prevQuantity == receivedQuantityTrace) {
       return;
     }
     if (!itemId || !userId || !stackDescription) {
       console.warn(
-        "⚠️ stackTracingSku butuh itemId, userId, dan stackDescription"
+        "⚠️ stackTracingSku butuh itemId, userId, dan stackDescription",
       );
       return;
     }
 
+    const lastEditBy = String(userId);
+    if (!mongoose.Types.ObjectId.isValid(lastEditBy)) {
+      console.warn("⚠️ stackTracingSku: userId bukan ObjectId valid, skip");
+      return;
+    }
+
     await StackTraceSku.create({
-      itemId,
-      lastEditBy: userId,
+      itemId: String(itemId),
+      lastEditBy,
       stackDescription,
       category,
       prevQuantity,
       receivedQuantityTrace,
-      invoice, //id
+      invoice,
     });
   } catch (err) {
     console.error("❌ Gagal mencatat stack tracing SKU:", err);

@@ -10,13 +10,11 @@ import {
   Star,
 } from "lucide-react-native";
 import { Text, TouchableOpacity, View } from "react-native";
-import { useNavigation } from "expo-router";
+import { DrawerActions } from "@react-navigation/native";
 
 const Tab = createBottomTabNavigator();
 
-const PointOfSaleNavigator = () => {
-  const navigation = useNavigation();
-
+const PointOfSaleNavigator = ({ navigation }) => {
   return (
     <View className={`flex-1`}>
       <Tab.Navigator screenOptions={{ headerShown: false }}>
@@ -53,7 +51,7 @@ const PointOfSaleNavigator = () => {
       {/* button untuk buka drawer */}
       <View className="absolute bottom-14 left-0">
         <TouchableOpacity
-          onPress={() => navigation.openDrawer()}
+          onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
           className="px-2 bg-blue-300 py-4 rounded-r-lg  items-center justify-center"
         >
           <Text>

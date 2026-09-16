@@ -1425,11 +1425,8 @@ const Promo = () => {
             }}
           />
           <div className="overflow-y-auto mb-4 max-h-screen">
-            <table className="table ">
-              {/* head */}
-              <thead
-                className={`sticky top-1 bg-white p-3 translate-y-[-10px]`}
-              >
+            <table className="table w-full">
+              <thead className="sticky top-16 bg-white">
                 <tr>
                   <th>Description</th>
                   <th>Quantity</th>

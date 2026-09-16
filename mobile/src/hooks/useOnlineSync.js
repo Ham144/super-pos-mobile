@@ -1,6 +1,10 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getisOnline, syncDiskonPromoVoucherInventories } from "../api";
+import {
+  getisOnline,
+  getOuletByUserId,
+  syncDiskonPromoVoucherInventories,
+} from "../api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Alert, Platform, ToastAndroid } from "react-native";
 import {
@@ -8,9 +12,11 @@ import {
   useDiskonOffline,
   usePromoOffline,
   useVoucherOffline,
+  useOutlet,
 } from "../store";
 import useAccount from "./useAccount";
 import { filterVisibleInventories } from "../utils/inventoryFilters";
+import { getLocalOutletMode } from "../utils/reconcileOutletSession";
 
 export const useOnlineSync = () => {
   const queryClient = useQueryClient();
@@ -123,14 +129,27 @@ export const useOnlineSync = () => {
           }, 0);
         }
 
-        //update hasil sinkronisasi outlet
-        if (newOutletData) {
-          try {
-            newOutletData.pendapatanFromApp = 0;
-            newOutletData.jumlahInvoice = newOutletData.jumlahInvoice;
-            newOutletData.terakhirSync = new Date().toISOString();
+        //update hasil sinkronisasi outlet — prefer DB currentOutlet
+        let outletToSave = newOutletData;
+        try {
+          const userInfoStr = await AsyncStorage.getItem("userInfo");
+          const uid = userInfoStr ? JSON.parse(userInfoStr)?._id : null;
+          if (uid) {
+            const fresh = await getOuletByUserId(uid);
+            if (fresh?.data) outletToSave = fresh.data;
+          }
+        } catch (_) {}
 
-            await AsyncStorage.setItem("outlet", JSON.stringify(newOutletData));
+        if (outletToSave) {
+          try {
+            outletToSave.pendapatanFromApp = 0;
+            outletToSave.terakhirSync = new Date().toISOString();
+
+            await AsyncStorage.setItem(
+              "outlet",
+              JSON.stringify(outletToSave),
+            );
+            useOutlet.getState().setOutlet(outletToSave);
             setTimeout(async () => {
               await queryClient.invalidateQueries(["outlet"]);
             }, 0);
@@ -138,7 +157,7 @@ export const useOnlineSync = () => {
             console.error("Error saving outlet data:", error);
             ToastAndroid?.show(
               "Gagal menyimpan data outlet",
-              ToastAndroid.SHORT
+              ToastAndroid.SHORT,
             );
           }
         }
@@ -407,6 +426,12 @@ export const useOnlineSync = () => {
 
   const checkAutoSync = async () => {
     try {
+      const mode = await getLocalOutletMode();
+      // Stateless never uses sync-offline-mode dump loop
+      if (mode === "stateless") {
+        return;
+      }
+
       const lastSyncTimeStr = await AsyncStorage.getItem("lastSyncTime");
       const lastSync = lastSyncTimeStr ? parseInt(lastSyncTimeStr) : null;
       setLastSyncTime(lastSync);

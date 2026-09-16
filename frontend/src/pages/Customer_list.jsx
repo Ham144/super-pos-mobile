@@ -1,13 +1,12 @@
 import { deleteCustomer, getAllCustomer } from "@/api/customerApi";
 import ModalEditCustomer from "@/components/ModalEditCustomer";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Info } from "lucide-react";
 import { useState } from "react";
 
 export default function Customer_list() {
   //states
   const [selectedCustomer, setSelectedCustomer] = useState(); //object
-
+  
   //tanstack query
   const queryClient = useQueryClient();
   const { data: customerList } = useQuery({
@@ -26,16 +25,9 @@ export default function Customer_list() {
       toast.error("Gagal menghapus customer");
     },
   });
-
+  
   return (
     <div className="flex flex-col gap-4">
-      <div role="alert" className="alert alert-info text-white">
-        <Info />
-        <span>
-          Customer list dibuat di app mobile CSI SUPER POS, hanya bisa
-          menghapus dan mengedit disini
-        </span>
-      </div>
       <div className="flex flex-col justify-items-center">
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-4">
