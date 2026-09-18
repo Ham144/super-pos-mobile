@@ -320,6 +320,15 @@ const DetailModal = ({ visible, setModalVisible, handleCetakBill }) => {
                           Tidak ditemukan SPG. Tambahkan di website lalu sinkronkan
                           ke mobile.
                         </Text>
+                        <TouchableOpacity
+                          onPress={() => {
+                            fetchSpgList();
+                          }}
+                        >
+                          <Text className="text-blue-600 text-center underline btn">
+                            Tekan ini untuk refetch
+                          </Text>
+                        </TouchableOpacity>
                       </View>
                     )}
                   </ScrollView>

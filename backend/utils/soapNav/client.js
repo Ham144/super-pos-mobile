@@ -1,5 +1,6 @@
 import Soap from "../../models/Soap.model.js";
 import Outlet from "../../models/Outlet.model.js";
+import InventoryRefrensi from "../../models/InventoryRefrensi.model.js";
 import {
   defaultSoapAction,
   NAV_SOAP_OPERATIONS,
@@ -11,6 +12,16 @@ import {
   extractXmlTagValue,
   parseInventoryPerLocationList,
 } from "./callSoap.js";
+
+const normalizeSkuKey = (sku) => String(sku ?? "").trim().toUpperCase();
+const normalizeLocationKey = (code) => String(code ?? "").trim().toUpperCase();
+
+/**
+ * NAV GetInventoryByLocationMultiple pada environment CSI mengembalikan
+ * Quantity=0 jika jumlah baris request terlalu sedikit (≤5). Batch lebih besar akurat.
+ * Pad dengan SKU lain di outlet yang sama (filler diabaikan saat overlay).
+ */
+const MIN_NAV_INVENTORY_LINES = 20;
 
 const operationNeedsLocationCode = (operationKey) =>
   operationKey === NAV_SOAP_OPERATIONS.SALES_ORDER_AUTO_POSTING_SHIP ||
@@ -110,15 +121,70 @@ export const executeNavSoap = async ({
   };
 };
 
+export const buildQuantityBySkuMap = (parsedItems = [], locationCode) => {
+  const wantedLocation = normalizeLocationKey(locationCode);
+  const quantityBySku = {};
+  const preferredHit = {};
+
+  for (const row of parsedItems) {
+    const key = normalizeSkuKey(row?.itemNo);
+    if (!key) continue;
+
+    const qty = Number(row?.quantity);
+    const safeQty = Number.isFinite(qty) ? qty : 0;
+    const rowLocation = normalizeLocationKey(row?.locationCode);
+    const locationMatches =
+      !wantedLocation || !rowLocation || rowLocation === wantedLocation;
+
+    if (locationMatches) {
+      quantityBySku[key] = safeQty;
+      preferredHit[key] = true;
+      continue;
+    }
+
+    if (!preferredHit[key] && quantityBySku[key] === undefined) {
+      quantityBySku[key] = safeQty;
+    }
+  }
+
+  return quantityBySku;
+};
+
+export const padSkusForNavBatch = async (outletId, skus = []) => {
+  const unique = [
+    ...new Set(skus.map((s) => String(s).trim()).filter(Boolean)),
+  ];
+  if (unique.length >= MIN_NAV_INVENTORY_LINES) return unique;
+
+  const need = MIN_NAV_INVENTORY_LINES - unique.length;
+  const fillers = await InventoryRefrensi.find({
+    outlet: outletId,
+    sku: { $nin: unique },
+  })
+    .select("sku")
+    .limit(need)
+    .lean();
+
+  for (const row of fillers) {
+    if (row?.sku) unique.push(String(row.sku).trim());
+  }
+
+  return unique;
+};
+
 export const checkInventoryByOutlet = async ({
   outletId,
   skus = [],
   operationKey = NAV_SOAP_OPERATIONS.GET_INVENTORY_BY_LOCATION_MULTIPLE,
+  padBatch = true,
 }) => {
   const locationCode = await getOutletLocationCode(outletId);
-  const uniqueSkus = [
+  const requestedSkus = [
     ...new Set(skus.map((s) => String(s).trim()).filter(Boolean)),
   ];
+  const uniqueSkus = padBatch
+    ? await padSkusForNavBatch(outletId, requestedSkus)
+    : requestedSkus;
 
   const items = uniqueSkus.map((sku) => ({
     itemNo: sku,
@@ -132,19 +198,39 @@ export const checkInventoryByOutlet = async ({
     payload: { items, locationCode },
   });
 
-  const parsedItems = parseInventoryPerLocationList(
-    result.parsed?.returnValue || result.response?.body,
+  let parsedItems = parseInventoryPerLocationList(result.response?.body);
+  if (!parsedItems.length && result.parsed?.returnValue) {
+    parsedItems = parseInventoryPerLocationList(result.parsed.returnValue);
+  }
+
+  const quantityBySku = buildQuantityBySkuMap(parsedItems, locationCode);
+
+  const requestedKeys = requestedSkus.map(normalizeSkuKey);
+  const matched = requestedKeys.filter((key) =>
+    Object.prototype.hasOwnProperty.call(quantityBySku, key),
   );
 
-  const quantityBySku = {};
-  for (const row of parsedItems) {
-    quantityBySku[row.itemNo] = row.quantity;
+  if (requestedSkus.length > 0 && matched.length === 0) {
+    const err = new Error(
+      `NAV ${operationKey}: response tidak memuat SKU yang diminta (parsed=${parsedItems.length})`,
+    );
+    err.code = "NAV_SKU_MISMATCH";
+    throw err;
+  }
+
+  const filteredMap = {};
+  for (const key of requestedKeys) {
+    if (Object.prototype.hasOwnProperty.call(quantityBySku, key)) {
+      filteredMap[key] = quantityBySku[key];
+    }
   }
 
   return {
     ...result,
     items: parsedItems,
-    quantityBySku,
+    quantityBySku: filteredMap,
+    requestedSkus,
+    batchedSkus: uniqueSkus,
   };
 };
 
@@ -172,10 +258,11 @@ export const enrichInventoriesWithNavStock = async (
     };
   }
 
+  // GetStatelessInventory invalid di NAV CSI — taruh paling belakang
   const tryOps = [
     operationKey,
-    NAV_SOAP_OPERATIONS.GET_STATELESS_INVENTORY,
     NAV_SOAP_OPERATIONS.GET_INVENTORY_BY_LOCATION_MULTIPLE,
+    NAV_SOAP_OPERATIONS.GET_STATELESS_INVENTORY,
   ].filter((op, idx, arr) => op && arr.indexOf(op) === idx);
 
   let lastError = null;
@@ -185,16 +272,18 @@ export const enrichInventoriesWithNavStock = async (
         outletId,
         skus,
         operationKey: op,
+        padBatch: true,
       });
       const enriched = list.map((inv) => {
+        const key = normalizeSkuKey(inv.sku);
         const hasNav = Object.prototype.hasOwnProperty.call(
           result.quantityBySku,
-          inv.sku,
+          key,
         );
         return {
           ...inv,
           quantityLocal: inv.quantity,
-          quantity: hasNav ? result.quantityBySku[inv.sku] : inv.quantity,
+          quantity: hasNav ? result.quantityBySku[key] : inv.quantity,
           stockSource: hasNav ? "nav" : "local",
         };
       });
@@ -228,4 +317,6 @@ export default {
   executeNavSoap,
   checkInventoryByOutlet,
   enrichInventoriesWithNavStock,
+  buildQuantityBySkuMap,
+  padSkusForNavBatch,
 };

@@ -1,9 +1,9 @@
 import { createNewUser } from "@/api/authApi";
-import { getSimpleOuletList } from "@/api/outletApi";
+import { assignUserToOutlet, getSimpleOuletList } from "@/api/outletApi";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import React, { useState } from "react";
 import toast, { Toaster } from "react-hot-toast";
-import { mockBackend, mockPages } from "@/api/constant";
+import { blockedAccess, mockBackend, mockPages } from "@/api/constant";
 
 import {
   User,
@@ -18,15 +18,16 @@ import {
   Eye,
   EyeOff,
   Save,
+  Loader2,
 } from "lucide-react";
 
-const ModalNewAccount = () => {
+const ModalCreateNewAccount = () => {
   const [newAccount, setNewAccount] = useState({
     username: "",
     password: "",
     outlet: "",
     roleName: "",
-    blockedAccess: [],
+    blockedAccess: blockedAccess,
     kodeKasir: "",
     outletId: "",
   });
@@ -40,37 +41,10 @@ const ModalNewAccount = () => {
     queryFn: getSimpleOuletList,
   });
 
-  const { mutateAsync: handleCreateNewUser } = useMutation({
+  const { mutateAsync: handleCreateNewUser, isPending: isCreatingUserPending } = useMutation({
     mutationFn: async () => {
       // Jika outlet dipilih, lakukan assignUserToOutlet setelah user dibuat
       const response = await createNewUser(newAccount);
-
-      // Jika outlet dipilih dan createNewUser berhasil, assign user ke outlet
-      if (newAccount.outletId && response.kodeKasir) {
-        try {
-          const outletAssignResponse = await fetch(
-            "/api/v1/outlet/assignUserToOutlet",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${localStorage.getItem("token")}`,
-              },
-              body: JSON.stringify({
-                userId: response.userId, // ID user yang baru dibuat
-                outletId: newAccount.outletId, // ID outlet yang dipilih
-              }),
-            },
-          );
-
-          if (!outletAssignResponse.ok) {
-            console.error("Gagal mengassign user ke outlet");
-          }
-        } catch (error) {
-          console.error("Error saat assign user ke outlet:", error);
-        }
-      }
-
       return response;
     },
     mutationKey: ["user"],
@@ -81,19 +55,15 @@ const ModalNewAccount = () => {
         username: "",
         password: "",
         roleName: "",
-        blockedAccess: [],
-        kodeKasir: "",
+        blockedAccess: blockedAccess,
+        kodeKasir:"" ,
         outletId: "",
       });
-      setErrorMessage(null);
       toast.success("Account created successfully!");
     },
     onError: (err) => {
       setErrorMessage(err?.response?.data?.message || err.message);
       toast.error(err?.response?.data?.message || err.message);
-      setTimeout(() => {
-        setErrorMessage(null);
-      }, 6000);
     },
   });
 
@@ -155,9 +125,14 @@ const ModalNewAccount = () => {
               <button
                 className="px-8 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-md hover:from-blue-700 hover:to-blue-800 transition-all duration-200 font-medium flex items-center gap-2 shadow-lg shadow-blue-950/25"
                 onClick={() => handleCreateNewUser()}
+                disabled={isCreatingUserPending}
               >
-                <Save className="w-5 h-5" />
-                Create Account
+                {isCreatingUserPending ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Save className="w-5 h-5" />
+                )}
+                {isCreatingUserPending ? "Creating Account..." : "Create Account"}
               </button>
             </div>
           </div>
@@ -411,4 +386,4 @@ const ModalNewAccount = () => {
   );
 };
 
-export default ModalNewAccount;
+export default ModalCreateNewAccount;

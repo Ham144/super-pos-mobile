@@ -20,6 +20,15 @@ const RESET_SUPERADMIN_PASSWORD = process.argv.includes(
   "--reset-superadmin-password",
 );
 
+//clear all data — hanya non-production; dijalankan setelah connect
+if (process.env.NODE_ENV === "production") {
+  throw new Error("Seed tidak boleh dijalankan di mode production");
+}
+
+async function clearAllData() {
+  await mongoose.connection.dropDatabase();
+}
+
 const NAV_STATELESS_LOCATIONS = [
   { kodeOutlet: "BKS_JUAL", namaOutlet: "Jual Bekasi" },
   { kodeOutlet: "BNDG_JUAL", namaOutlet: "Jual Bandung" },
@@ -42,9 +51,9 @@ const NAV_STATELESS_LOCATIONS = [
 ];
 
 const OFFLINE_OUTLET = {
-  kodeOutlet: "01",
-  namaOutlet: "Demo Offline Outlet",
-  description: "Outlet default boleh dihapus",
+  kodeOutlet: "PRJ_JKT",
+  namaOutlet: "PRJ Event",
+  description: "Outlet PRJ Event",
 };
 
 const sampleProducts = [
@@ -105,33 +114,48 @@ const seedBrands = async () => {
   return brands;
 };
 
-const seedInventory = async () => {
-  for (const product of sampleProducts) {
-    await Inventory.findOneAndUpdate(
-      { sku: product.sku },
-      {
-        $setOnInsert: {
-          _id: product.sku,
-          sku: product.sku,
-          quantity: product.quantity,
-          RpHargaDasar: mongoose.Types.Decimal128.fromString(
-            product.RpHargaDasar,
-          ),
-          terjual: 0,
-        },
-        $set: {
-          barcodeItem: product.barcodeItem,
-          description: product.description,
-          brand: product.brand,
-          isDisabled: false,
-        },
-      },
-      { new: true, upsert: true, setDefaultsOnInsert: true },
-    );
+const seedInventory = async (outlets = []) => {
+  if (!outlets.length) {
+    throw new Error("seedInventory butuh daftar outlet (sku unik per outlet)");
   }
+
+  let seeded = 0;
+  for (const outlet of outlets) {
+    for (const product of sampleProducts) {
+      await Inventory.findOneAndUpdate(
+        { sku: product.sku, outlet: outlet._id },
+        {
+          $set: {
+            barcodeItem: product.barcodeItem,
+            description: product.description,
+            brand: product.brand,
+            isDisabled: false,
+            RpHargaDasar: mongoose.Types.Decimal128.fromString(
+              product.RpHargaDasar,
+            ),
+            RpHargaLowest: mongoose.Types.Decimal128.fromString("0"),
+          },
+          $setOnInsert: {
+            sku: product.sku,
+            outlet: outlet._id,
+            quantity: product.quantity,
+            terjual: 0,
+          },
+        },
+        { new: true, upsert: true, setDefaultsOnInsert: true },
+      );
+      seeded += 1;
+    }
+  }
+
+  return seeded;
 };
 
-const seedSuperadmin = async () => {
+const seedSuperadmin = async (currentOutletId) => {
+  if (!currentOutletId) {
+    throw new Error("seedSuperadmin butuh currentOutletId");
+  }
+
   const passwordHash = bcrypt.hashSync(SUPERADMIN_PASSWORD, 10);
   const existingUser = await User.findOne({ username: SUPERADMIN_USERNAME });
 
@@ -140,6 +164,7 @@ const seedSuperadmin = async () => {
       roleName: "SUPER ADMIN",
       blockedAccess: [],
       isDisabled: false,
+      currentOutlet: currentOutletId,
     };
 
     if (RESET_SUPERADMIN_PASSWORD) {
@@ -172,6 +197,7 @@ const seedSuperadmin = async () => {
     blockedAccess: [],
     kodeKasir,
     isDisabled: false,
+    currentOutlet: currentOutletId,
   });
 };
 
@@ -276,7 +302,7 @@ const seedPaymentMethods = async () => {
     const filter = { method: paymentMethod.method };
     const options = { new: true, upsert: true, setDefaultsOnInsert: true };
 
-    if (paymentMethod.gatewayProvider) {
+    if (paymentMethod.systemKey) {
       const { gatewayProvider, isSystem, systemKey, ...baseFields } =
         paymentMethod;
       await PaymentMethod.findOneAndUpdate(
@@ -290,7 +316,11 @@ const seedPaymentMethods = async () => {
     } else {
       await PaymentMethod.findOneAndUpdate(
         filter,
-        { $setOnInsert: paymentMethod },
+        {
+          $setOnInsert: paymentMethod,
+          $unset: { systemKey: 1, gatewayProvider: 1 },
+          $set: { isSystem: false },
+        },
         options,
       );
     }
@@ -321,23 +351,25 @@ const seedSystemConfigFromEnv = async () => {
     config.PASS_DOWNLOAD_APK = process.env.PASS_DOWNLOAD_APK;
   }
 
+  // Prefer WHATSAPP_API_KEY; fall back to FONNTE_TOKEN (common .env alias)
+  const whatsappToken =
+    process.env.WHATSAPP_API_KEY || process.env.FONNTE_TOKEN || "";
+  if (whatsappToken) {
+    config.WHATSAPP_API_KEY = whatsappToken;
+  }
+
   if (Object.keys(config).length === 0) return null;
 
-  const adConfig = {};
-  if (config.AD_HOST) adConfig.AD_HOST = config.AD_HOST;
-  if (config.AD_PORT) adConfig.AD_PORT = config.AD_PORT;
-  if (config.AD_DOMAIN) adConfig.AD_DOMAIN = config.AD_DOMAIN;
-  if (config.AD_BASE_DN) adConfig.AD_BASE_DN = config.AD_BASE_DN;
-
-  const { AD_HOST, AD_PORT, AD_DOMAIN, AD_BASE_DN, ...otherConfig } = config;
-
+  // Always $set from env so re-seed corrects stale AD_BASE_DN / AD_HOST / token.
   return SystemConfig.findOneAndUpdate(
     { _id: "global" },
+    { $set: config },
     {
-      $setOnInsert: otherConfig,
-      ...(Object.keys(adConfig).length > 0 ? { $set: adConfig } : {}),
+      new: true,
+      upsert: true,
+      setDefaultsOnInsert: true,
+      runValidators: true,
     },
-    { new: true, upsert: true, setDefaultsOnInsert: true },
   );
 };
 
@@ -359,7 +391,7 @@ const seedSoapNavForOutlets = async (outlets) => {
 
   const statelessOutlets = outlets.filter((outlet) => outlet.mode === "stateless");
   let seeded = 0;
-
+  
   for (const outlet of statelessOutlets) {
     await Soap.findOneAndUpdate(
       { outlet: outlet._id },
@@ -419,17 +451,48 @@ const seedExternalProductReferences = async (outlets) => {
   return seeded;
 };
 
+
 const seed = async () => {
   if (!process.env.MONGO_URI) {
     throw new Error("MONGO_URI belum diatur di file .env");
   }
+  if (!SUPERADMIN_PASSWORD) {
+    throw new Error("SEED_SUPERADMIN_PASSWORD belum diatur di file .env");
+  }
 
   await mongoose.connect(process.env.MONGO_URI);
+  await clearAllData();
 
   const brands = await seedBrands();
-  await seedInventory();
-  const superadmin = await seedSuperadmin();
+
+  // Outlet dulu (tanpa kasir) supaya User.currentOutlet (required) bisa diisi
+  const bootstrapOfflineOutlet = await Outlet.findOneAndUpdate(
+    { kodeOutlet: OFFLINE_OUTLET.kodeOutlet },
+    {
+      $set: {
+        namaOutlet: OFFLINE_OUTLET.namaOutlet,
+        namaPerusahaan: COMPANY_NAME,
+        mode: "offline",
+        description: OFFLINE_OUTLET.description,
+      },
+      $setOnInsert: {
+        kodeOutlet: OFFLINE_OUTLET.kodeOutlet,
+        periodeSettlement: 1,
+        jamSettlement: "00:00",
+        jumlahInvoice: 0,
+        pendapatan: 0,
+      },
+    },
+    { new: true, upsert: true, setDefaultsOnInsert: true },
+  );
+
+  const superadmin = await seedSuperadmin(bootstrapOfflineOutlet._id);
   const outlets = await seedOutlets(brands, superadmin);
+  // Demo SKU hanya untuk outlet offline (stateless pakai ExternalProductReference / NAV)
+  const offlineOutlets = outlets.filter((o) => o.mode === "offline");
+  const inventorySeeded = await seedInventory(
+    offlineOutlets.length ? offlineOutlets : [bootstrapOfflineOutlet],
+  );
   await seedPaymentMethods();
 
   const offlineOutlet = outlets.find((outlet) => outlet.mode === "offline");
@@ -454,11 +517,20 @@ const seed = async () => {
   console.log(
     `- Outlet: ${statelessCount} stateless, ${offlineCount} offline`,
   );
-  console.log(`- SKU contoh: ${sampleProducts.length}`);
+  console.log(
+    `- Inventory contoh: ${inventorySeeded} dokumen (${sampleProducts.length} SKU × ${offlineOutlets.length || 1} outlet offline)`,
+  );
   console.log("- Metode pembayaran: Tunai, Transfer, QRIS");
   console.log(
     `- Konfigurasi sistem dari .env: ${systemConfig ? "disimpan" : "dilewati"}`,
   );
+  if (systemConfig?.WHATSAPP_API_KEY) {
+    console.log("- WHATSAPP_API_KEY: terisi dari WHATSAPP_API_KEY / FONNTE_TOKEN");
+  } else {
+    console.log(
+      "- WHATSAPP_API_KEY: kosong (set WHATSAPP_API_KEY atau FONNTE_TOKEN di .env)",
+    );
+  }
   console.log(
     `- Konfigurasi SOAP NAV: ${soapSeededCount > 0 ? `${soapSeededCount} outlet` : "dilewati"}`,
   );

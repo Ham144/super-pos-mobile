@@ -3,7 +3,7 @@ import { View, Text, FlatList, StyleSheet, Pressable } from "react-native";
 import { CircleX, ArrowBigRightDash, Pencil } from "lucide-react-native";
 import { useCurrentBill } from "../store";
 
-const formatRp = (value) =>
+export const formatRp = (value) =>
   Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(
     Number(value) || 0
   );

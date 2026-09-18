@@ -185,7 +185,6 @@ router.delete("/delete/:_id", async (req, res) => {
 //getoutletbyuserid
 router.get("/getOutlet/:userId", async (req, res) => {
   const { userId } = req.params;
-  console.log("hit /getOutlet", userId);
   if (!userId) {
     return res.status(500).json({
       message: "gagal mendapatkan outlet, karena user id tidak diberikan",
@@ -214,17 +213,17 @@ router.get("/getOutlet/:userId", async (req, res) => {
 //menerima satu user id bukan array
 router.post("/assignUserToOutlet", async (req, res) => {
   const { userId, outletId } = req.body;
-
-  if (!userId) {
-    return res.status(400).json({ message: "User ID is required" });
+  if (!userId || !outletId) {
+    return res.status(400).json({ message: "userId dan outletId diperlukan" });
   }
-
+  
   try {
     if (outletId) {
       const outletToUpdate = await Outlet.findById(outletId);
       if (!outletToUpdate) {
         return res.status(404).json({ message: "Outlet not found" });
       }
+      console.log("test", outletToUpdate);
 
       const alreadyAssigned = outletToUpdate.kasirList.some(
         (id) => id.toString() === userId.toString(),
@@ -234,18 +233,21 @@ router.post("/assignUserToOutlet", async (req, res) => {
         await outletToUpdate.save();
       }
     } else {
-      await Outlet.updateMany(
-        { kasirList: userId },
-        { $pull: { kasirList: userId } },
-      );
+      const outlets = await Outlet.find({ kasirList: userId });
+      for (const outlet of outlets) {
+        outlet.kasirList = outlet.kasirList.filter(
+          (id) => id.toString() !== userId.toString(),
+        );
+        await outlet.save();
+      }
     }
 
     return res.json({ message: "User outlet assignment updated successfully" });
   } catch (error) {
-    console.error("Error assigning user to outlet:", error);
     return res.status(500).json({ message: error.message });
   }
 });
+
 
 router.post("/linkBrandToOutlet", async (req, res) => {
   const { outletId, brandId } = req.body;
@@ -270,7 +272,7 @@ router.post("/linkBrandToOutlet", async (req, res) => {
         (id) => id.toString() !== brandId,
       );
       outletDB.brandIds = newBrandIds;
-      await outletDB.save();
+      // await outletDB.save();
       return res.json({
         message: "Brand berhasil dihapus",
         data: newBrandIds,
@@ -281,7 +283,7 @@ router.post("/linkBrandToOutlet", async (req, res) => {
     }
 
     // Simpan perubahan
-    await outletDB.save();
+    // await outletDB.save();
 
     // Kirim response dengan data terbaru
     return res.json({
@@ -292,7 +294,7 @@ router.post("/linkBrandToOutlet", async (req, res) => {
     });
   } catch (error) {
     console.log(error);
-    return res.status(400).json({ message: "failed" });
+    return res.status(500).json({ message: "gagal menugaskan user ke outlet" });
   }
 });
 

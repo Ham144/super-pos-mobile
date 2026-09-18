@@ -18,6 +18,7 @@ import {
 import { enumCustomerDialog } from "../dir/enumList";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useCurrentBill, useOutlet, useSyncSetting } from "../store";
+import { MODE_OUTLET } from "../constant";
 
 export const BillHeader = ({
   handleShowBillTersimpanOffline,
@@ -95,7 +96,7 @@ export const BillHeader = ({
               <ReceiptText size={39} color={"#3B82F6"} />
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity
+          {outlet?.mode == MODE_OUTLET.offline && <TouchableOpacity
             onPress={handleSinkronisasi}
             className={`flex-col  justify-center items-center p-2 rounded-lg shadow-lg ${
               isOnline ? "bg-blue-950" : "bg-gray-400"
@@ -124,7 +125,7 @@ export const BillHeader = ({
                 {autoSyncSetelahKwitansiPertama ? "Auto" : "Interval"}
               </Text>
             </View>
-          </TouchableOpacity>
+          </TouchableOpacity>}
           <View className="flex-row gap-x-1">
             <TouchableOpacity
               onPress={() => {
@@ -162,21 +163,41 @@ export const BillHeader = ({
             )}
           </View>
         </View>
-
         <View
-          className={`px-3 py-3 rounded-lg flex-row items-center ${
-            isOnline ? "bg-green-500" : "bg-red-500"
-          }`}
-        >
-          {isOnline ? (
-            <Wifi size={16} color="#ffffff" />
-          ) : (
-            <WifiOff size={16} color="#ffffff" />
-          )}
-          <Text className="text-white text-xs font-medium ml-1 w-14 truncate">
-            {outlet?.namaOutlet}
-          </Text>
-        </View>
+  className={`px-3 py-2 rounded-lg flex-row items-center border ${
+    outlet?.mode === MODE_OUTLET.offline
+      ? "bg-amber-500/10 border-amber-500/30"
+      : outlet?.mode === MODE_OUTLET.stateless
+      ? "bg-purple-500/10 border-purple-500/30"
+      : "bg-slate-100 border-slate-200"
+  }`}
+>
+  {/* Status Internet (Hijau / Merah) */}
+  {isOnline ? (
+    <Wifi size={15} color="#10b981" />
+  ) : (
+    <WifiOff size={15} color="#ef4444" />
+  )}
+
+  {/* Status Mode & Nama Outlet */}
+  <Text
+    numberOfLines={1}
+    ellipsizeMode="tail"
+    className={`text-xs font-semibold ml-1.5 max-w-[100px] ${
+      outlet?.mode === MODE_OUTLET.offline
+        ? "text-amber-600"
+        : outlet?.mode === MODE_OUTLET.stateless
+        ? "text-purple-600"
+        : "text-slate-700"
+    }`}
+  >
+    {outlet?.mode === MODE_OUTLET.offline
+      ? "Offline Mode"
+      : outlet?.mode === MODE_OUTLET.stateless
+      ? `Stateless • ${outlet?.namaOutlet || ""}`
+      : outlet?.namaOutlet}
+  </Text>
+</View>
       </View>
 
       <View className="flex flex-row  h-7 mt-1 ">

@@ -170,19 +170,7 @@ const ItemLibrary = () => {
     });
   };
 
-  const { mutateAsync: handleToggleDisableInventory } = useMutation({
-    mutationFn: (id) => toggleDisableInventory(id),
-    onSuccess: () => {
-      toast.success("berhasil mengubah status inventory");
-      queryClient.invalidateQueries(["inventories"]);
-      closeInventoryModal();
-    },
-    onError: (error) => {
-      toast.error(
-        error.response.data.message || "gagal mengubah status inventory",
-      );
-    },
-  });
+  
 
   // Infinite scroll — API tetap page/limit (kompatibel dump offline mobile)
   const inventoryFilterKey = useMemo(() => {
@@ -751,9 +739,7 @@ const ItemLibrary = () => {
                           <Info className="w-5 h-5 text-blue-600" />
                         </div>
                         <p className="text-sm text-gray-700">
-                          Di mobile, barang tidak memiliki harga pun sekarang
-                          akan tetap muncul, karena user biasanya membuat barang
-                          bonus RP.0
+                          TIPS: Inisialisasi data dengan mudah menggunakan menu "Referensi Produk Awal" bisa kamu temukan di outlet list {'>'} integrasi atau dengan mengimport file spreadsheet dari menu import / export dipojok kanan atas
                         </p>
                       </div>
                     </div>
@@ -1160,7 +1146,7 @@ const ItemLibrary = () => {
                       }
                     }
                   }}
-                  className="btn btn-primary flex-1"
+                  className="btn  flex-1"
                 >
                   <Save className="w-4 h-4" />
                   {newSingleInventory ? "Register" : "Update"}

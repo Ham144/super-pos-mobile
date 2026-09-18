@@ -526,8 +526,8 @@ const Outlet = () => {
                         <span
                           className={`badge badge-sm font-medium ${
                             outlet.mode === "stateless"
-                              ? "badge-info"
-                              : "badge-warning"
+                              ? "bg-purple-300"
+                              : "bg-blue-300"
                           }`}
                         >
                           {modeLabel(outlet.mode)}

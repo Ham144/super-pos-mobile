@@ -25,6 +25,9 @@ import {
   Settings,
   UserCircle,
   Mail,
+  MessageCircle,
+  Network,
+  Bug,
 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { logout } from "@/api/authApi";
@@ -103,12 +106,13 @@ const SideDrawer = ({ children }) => {
 
   const menuItems = [
     {
-      title: "REPORTS",
+      title: "REPORT",
       icon: BarChart3,
       items: [
         { name: "SALES REPORT.", icon: BarChart3 },
         { name: "INVOICES", icon: FileText },
         { name: "STACK TRACE.", icon: Package },
+        { name: "REPORT LIST", icon: Bug },
       ],
     },
     {
@@ -135,15 +139,16 @@ const SideDrawer = ({ children }) => {
       items: [{ name: "CUSTOMER LIST", icon: Users }],
     },
     {
-      title: "ACCOUNTS",
+      title: "ACCOUNT",
       icon: Wallet,
       items: [
         { name: "ALL ACCOUNT", icon: Wallet },
         { name: "SPG REFERENCE", icon: Users },
+        { name: "PROFILE", icon: UserCircle },
       ],
     },
     {
-      title: "TRANSACTION SETTINGS",
+      title: "TRANSACTION SETTING",
       icon: Settings,
       items: [
         { name: "OUTLET LIST", icon: Store },
@@ -153,12 +158,12 @@ const SideDrawer = ({ children }) => {
       ],
     },
     {
-      title: "APPLICATION SETTINGS",
+      title: "GLOBAL SETTING",
       icon: Zap,
       items: [
-        { name: "SUMBER THIRDPARTY", icon: Zap },
-        { name: "PROFILE", icon: UserCircle },
         { name: "EMAIL CONFIG", icon: Mail },
+        { name: "WHATSAPP CONFIG", icon: MessageCircle },
+        { name: "LDAP CONFIG", icon: Network },
       ],
     },
   ];
@@ -441,15 +446,7 @@ const SideDrawer = ({ children }) => {
                 >
                   <FileText size={14} /> Docs
                 </a>
-                <span>•</span>
-                <button
-                  onClick={() =>
-                    document.getElementById("report_modal")?.showModal()
-                  }
-                  className="text-white hover:underline flex items-center gap-1"
-                >
-                  <AlertCircle size={14} /> Report
-                </button>
+                
                 <span>•</span>
                 <a
                   href="/about"

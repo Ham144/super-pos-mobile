@@ -8,6 +8,7 @@ import {
 import React, { useState } from "react";
 import { useCurrentBill } from "../store";
 import { TextInput } from "react-native-gesture-handler";
+import { formatRp } from "./BillItems";
 
 export default function EditItemModal({
   showEditItemModal,
@@ -23,11 +24,12 @@ export default function EditItemModal({
     tempEditItem?.quantity?.toString() || "1",
   );
   const [catatan, setCatatan] = useState(tempEditItem?.catatan || "");
-  const [harga, setHarga] = useState(
-    tempEditItem?.RpHargaDasar != null
-      ? String(tempEditItem.RpHargaDasar)
-      : "",
-  );
+  // Digits-only string; display uses id-ID thousand separators (1.234.567)
+  const [hargaDigits, setHargaDigits] = useState(() => {
+    if (tempEditItem?.RpHargaDasar == null) return "";
+    const n = Math.round(Number(tempEditItem.RpHargaDasar));
+    return Number.isFinite(n) && n >= 0 ? String(n) : "";
+  });
 
   const handleEditConfirm = async () => {
     if (quantity === "" || parseInt(quantity) < 1) {
@@ -38,8 +40,8 @@ export default function EditItemModal({
       return;
     }
 
-    const parsedHarga = parseFloat(String(harga).replace(/,/g, ""));
-    if (!Number.isFinite(parsedHarga) || parsedHarga < 0) {
+    const parsedHarga = Number(hargaDigits);
+    if (!hargaDigits || !Number.isFinite(parsedHarga) || parsedHarga < 0) {
       ToastAndroid?.show("Harga tidak valid", ToastAndroid.SHORT);
       return;
     }
@@ -113,7 +115,7 @@ export default function EditItemModal({
             {tempEditItem?.RpHargaLowest != null && (
               <Text className="text-[10px] text-gray-500 mb-2 text-center">
                 Harga web: Rp{" "}
-                {Number(tempEditItem.RpHargaLowest).toLocaleString("id-ID")}
+                {formatRp(tempEditItem.RpHargaLowest)}
               </Text>
             )}
             <TextInput
@@ -126,13 +128,17 @@ export default function EditItemModal({
                 height: 40,
               }}
               keyboardType="number-pad"
-              placeholder="Harga satuan"
-              value={harga}
+              value={hargaDigits === "" ? "" : formatRp(hargaDigits)}
               onChangeText={(text) => {
-                if (text === "" || /^\d*\.?\d*$/.test(text)) {
-                  setHarga(text);
+                const digits = String(text).replace(/\D/g, "");
+                if (digits === "") {
+                  setHargaDigits("");
+                  return;
                 }
+                // Strip leading zeros except a lone "0"
+                setHargaDigits(digits.replace(/^0+(?=\d)/, ""));
               }}
+              placeholder="0"
             />
           </View>
 

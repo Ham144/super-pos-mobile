@@ -593,7 +593,7 @@ router.post("/sync-offline-mode", authenticate, async (req, res) => {
             return false;
           });
         });
-
+        
         // Hanya buat GeneratedVoucher jika matchedBill dan email customer tersedia
         if (matchedBill?.customer?.email) {
           //kalau ada perbedaan quantity, maka generate generatedVoucher

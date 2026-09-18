@@ -365,9 +365,10 @@ export const getAllinventories = async (req, res) => {
     }
 
     if (searchKey) {
+      const escaped = String(searchKey).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       complex.$or = [
-        { sku: { $regex: searchKey, $options: "i" } },
-        { description: { $regex: searchKey, $options: "i" } },
+        { sku: { $regex: escaped, $options: "i" } },
+        { description: { $regex: escaped, $options: "i" } },
       ];
     }
 
@@ -416,7 +417,8 @@ export const getAllinventories = async (req, res) => {
 
     if (isStateless && data.length) {
       const enriched = await enrichInventoriesWithNavStock(outletId, data, {
-        operationKey: NAV_SOAP_OPERATIONS.GET_STATELESS_INVENTORY,
+        // GetStatelessInventory invalid di NAV CSI — pakai multiple
+        operationKey: NAV_SOAP_OPERATIONS.GET_INVENTORY_BY_LOCATION_MULTIPLE,
       });
       data = enriched.inventories;
       stockSource = enriched.stockSource;

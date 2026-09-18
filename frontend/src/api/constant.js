@@ -31,9 +31,8 @@ export const mockPages = [
       "Page untuk melihat semua invoice yang telah dibuat dan melakukan void",
   },
   {
-    originalPath: "/summary",
-    description:
-      "Page untuk melihat rangkuman keluar masuk terkait barang/item",
+    originalPath: "/report_list",
+    description: "Page untuk melihat dan menyelesaikan laporan bug dari pengguna",
   },
   {
     originalPath: "/item_library",
@@ -54,6 +53,10 @@ export const mockPages = [
       "Page untuk mengelola dan melihat semua voucher yang dapat digunakan",
   },
   {
+    originalPath: "/voucher/generation",
+    description: "Page untuk generate kode voucher dari logic voucher",
+  },
+  {
     originalPath: "/brands",
     description: "Page untuk mengelola dan melihat semua brands dari product",
   },
@@ -63,11 +66,11 @@ export const mockPages = [
   },
   {
     originalPath: "/purchase_order_receive",
-    description: "Page untuk Memenuhi atau mencari PO  yang telah dibuat",
+    description: "Page untuk Memenuhi atau mencari PO yang telah dibuat",
   },
   {
     originalPath: "/customer_list",
-    description: "Page untuk Melihat customer yang telah tercatat",
+    description: "Page untuk melihat customer yang telah tercatat",
   },
   {
     originalPath: "/all_account",
@@ -78,17 +81,8 @@ export const mockPages = [
     description: "Page untuk mengelola data SPG yang stateless",
   },
   {
-    originalPath: "/kasir_list",
-    description:
-      "Page untuk Manager Kasir dan melihat penjualan masing masing ",
-  },
-  {
-    originalPath: "/spg_list",
-    description: "Alias halaman SPG reference yang stateless",
-  },
-  {
     originalPath: "/outlet_list",
-    description: "Page untuk Management outlet",
+    description: "Page untuk management outlet",
   },
   {
     originalPath: "/payment_method",
@@ -101,37 +95,38 @@ export const mockPages = [
   {
     originalPath: "/kwitansi_pembayaran_tertunda",
     description:
-      "Page untuk mengatur pengriman bukti pembayaran yang belum tercetak",
+      "Page untuk mengatur pengiriman bukti pembayaran yang belum tercetak",
   },
   {
     originalPath: "/profile",
     description:
-      "Page untuk melihat Akun diri sendiri, reset password, edit data diri  ",
+      "Page untuk melihat akun diri sendiri, reset password, edit data diri",
   },
   {
     originalPath: "/artikel_documentation",
     description: "Page untuk melihat tutorial dan dokumentasi",
   },
   {
-    originalPath: "/database",
-    description: "Page untuk mereset data dan mendownload database",
-  },
-  {
-    originalPath: "/sumber_thirdparty",
-    description: "sumber data awal",
-  },
-  {
     originalPath: "/email_config",
     description: "Page untuk mengatur pengiriman email",
   },
   {
-    originalPath: "/database_feature",
+    originalPath: "/whatsapp_config",
     description:
-      "Page untuk mereset data entitas tertentu atau untuk export data dari periode tertentu untuk pencadangan external",
+      "Page untuk mengatur token WhatsApp (Fonnte) dan uji kirim pesan",
+  },
+  {
+    originalPath: "/ldap_config",
+    description:
+      "Page untuk mengatur koneksi LDAP / Active Directory dan uji bind kredensial",
   },
   {
     originalPath: "/stack_trace",
-    description: "Page untuk mendownload data perubahan detil sku",
+    description: "Page untuk mendownload data perubahan detail SKU",
+  },
+  {
+    originalPath: "/about",
+    description: "Page informasi tentang CSI SUPER POS",
   },
 ];
 
@@ -663,10 +658,6 @@ export const mockBackend = [
     description: "API khusus Mobiel tuk mendapatkan initial inventory by brand",
   },
   {
-    originalPath: "/api/v1/database-feature/reset-partly",
-    description: "API untuk reset manual sebagian entitas",
-  },
-  {
     originalPath: "/api/v1/saleReport/rangking-payment-method",
     description:
       "API untuk mendapatkan data penjualan berdasarkan metode pembayaran",
@@ -684,4 +675,23 @@ export const PurchaseOrderTemplate = [
   ["po4", "B5678EF", "12DSFTWINO,2,,q3eqafrx"],
   ["po5", "B1234CD", "12DWF,5,,aw3derader"],
   ["po6", "B5678EF", "12ELK,2,,adaw3r"],
+];
+
+// used by modalCreateNewAccount (default deny for new app users)
+export const blockedAccess = [
+  "/item_library",
+  "/promo",
+  "/diskon",
+  "/voucher",
+  "/voucher/generation",
+  "/brands",
+  "/all_account",
+  "/outlet_list",
+  "/payment_method",
+  "/printer_config",
+  "/email_config",
+  "/whatsapp_config",
+  "/ldap_config",
+  "/report_list",
+  "/stack_trace",
 ];

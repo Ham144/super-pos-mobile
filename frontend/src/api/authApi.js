@@ -46,6 +46,14 @@ export const getUserInfo = async () => {
   }
 };
 
+export const getUserInfoComplete = async () => {
+  const response = await axios.get(
+    `${BASE_URL}/api/v1/auth/getUserInfoComplete`,
+    { withCredentials: true },
+  );
+  return response.data;
+};
+
 export const getAllAccount = async () => {
   const response = await axios.get(`${BASE_URL}/api/v1/auth/getAllAccount`, {
     withCredentials: true,
@@ -81,6 +89,13 @@ export const getUserById = async (id) => {
 
 export const logout = async () => {
   const response = await axios.delete(`${BASE_URL}/api/v1/auth/logout`, {
+    withCredentials: true,
+  });
+  return response.data;
+};
+
+export const assignUserToOutlet = async (body) => {
+  const response = await axios.post(`${BASE_URL}/api/v1/auth/assignUserToOutlet`, body, {
     withCredentials: true,
   });
   return response.data;

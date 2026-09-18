@@ -8,15 +8,13 @@ import {
 } from "../store";
 import { View, Text, ToastAndroid, Alert } from "react-native";
 import { Scissors } from "lucide-react-native";
+import { environment } from "../constant";
 
 const CheckDiskonOffline = () => {
-  //zustand
   const { currentBill, diskon, setDiskon } = useCurrentBill();
   const { diskonOffline, setDiskonOffline } = useDiskonOffline();
   const [diskonCache, setDiskonCache] = useState(new Map());
-
   const { diskonEnabled } = useFiturEnabled();
-  //states
   const { debounceTime } = useDebouceTime();
 
   //diskonDB jadi map untuk pencarian lebih cepat
@@ -106,10 +104,10 @@ const CheckDiskonOffline = () => {
       } else {
         const diskonStorage = JSON.parse(await AsyncStorage.getItem("diskon"));
         if (!diskonStorage) {
-          ToastAndroid?.show(
-            "gagal mengambil diskon dari local, coba sync ulang",
-            ToastAndroid.SHORT
-          );
+          if(environment == "production") return;
+          else {
+            console.log("gagal mengambil diskon dari local, coba sync ulang");
+          }
         } else {
           setDiskonOffline(diskonStorage);
           const processesedItems = await applyDiskonToItems(
@@ -121,10 +119,10 @@ const CheckDiskonOffline = () => {
       }
     } catch (error) {
       console.log(error);
-      ToastAndroid?.show(
-        "gagal mengambil diskon dari local, coba sync",
-        ToastAndroid.SHORT
-      );
+      if(environment == "production") return;
+      else {
+        console.log("gagal mengambil diskon dari local, coba sync");
+      }
     }
   };
 
@@ -140,14 +138,16 @@ const CheckDiskonOffline = () => {
     return () => clearTimeout(debounceTimeout.current);
   }, [currentBill, diskonEnabled]);
 
+  // Logic always runs; UI only when there is something to show
+  if (!diskonEnabled || !diskon?.length) return null;
+
   return (
     <View className="py-1">
       <Text className="text-xs text-gray-500 font-bold font-aldrich mb-1">
         Fitur Diskon (Aktif)
       </Text>
-      <View className="flex-1">
-        {diskon.length ? (
-          diskon.map((dis, index) => (
+      <View>
+        {diskon.map((dis, index) => (
             <View
               key={index}
               className="flex-row justify-between items-center py-1 border-b border-gray-100"
@@ -173,10 +173,7 @@ const CheckDiskonOffline = () => {
                 </View>
               </View>
             </View>
-          ))
-        ) : (
-          <Text className="text-xs text-gray-500">Tidak ada diskon</Text>
-        )}
+          ))}
       </View>
     </View>
   );

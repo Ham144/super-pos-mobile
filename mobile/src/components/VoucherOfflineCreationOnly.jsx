@@ -6,24 +6,20 @@ import {
   useFiturEnabled,
   useVoucherOffline,
 } from "../store";
-import { View, Text, ToastAndroid, Platform } from "react-native";
+import { View, Text, Platform } from "react-native";
 import { TicketPercent } from "lucide-react-native";
+import { environment } from "../constant";
 
-//voucher tidak bisa diperiksa/dipakai di mobile, Pelanggan.model terlalu besar untuk disimpan di mobile (harus online)
-//voucher hanya bisa creation di mobile offline, dan menampilkan di RegisterInvoice dengan
-//untuk mengecek apakah user memiliki voucher
+// Voucher redeem is online-only; mobile only creates/applies future voucher matches offline.
 const VoucherOfflineCreationOnly = () => {
-  //zustand
   const { currentBill, futureVoucher, setFutureVoucher } = useCurrentBill();
   const { voucherOffline, setVoucherOffline } = useVoucherOffline();
   const { debounceTime } = useDebouceTime();
-
   const { futureVoucherEnabled } = useFiturEnabled();
 
   const applyVoucherToItems = async (voucherDB, items) => {
     const updatedItems = await Promise.all(
       items.map(async (item) => {
-        //----------normal-----
         let voucher = null;
 
         const MultiMatch = voucherDB.filter((vouch) => {
@@ -34,60 +30,41 @@ const VoucherOfflineCreationOnly = () => {
             new Date(vouch?.berlakuDari) > new Date() ||
             new Date(vouch?.berlakuHingga) < new Date()
           ) {
-            console.log(
-              `voucher ${vouch?.judulVoucher} , atau tidak lagi berlaku`
-            );
             return false;
           }
           if (vouch?.tipeSyarat == "quantity") {
             if (vouch?.minimalPembelianQuantity > item?.quantity) {
-              console.log(
-                `voucher ${vouch?.judulVoucher} , syarat quantity tidak terpenuhi`
-              );
               return false;
             }
           }
           if (vouch?.tipeSyarat == "totalRp") {
             if (item?.totalRp < vouch?.minimalPembelianTotalRp) {
-              console.log(
-                `voucher ${vouch?.judulVoucher} , syarat totalRp tidak terpenuhi`
-              );
               return false;
             }
           }
           if (vouch?.quantityTersedia < 1) {
-            console.log(`voucher ${vouch?.judulVoucher} , tidak tersedia`);
             return false;
           }
           return true;
         });
 
         if (!MultiMatch?.length) {
-          return null; // Skip this item by returning null
+          return null;
         }
 
-        //jika ada lebih dari 1 voucher, maka proses banding yang paling untung
         if (MultiMatch.length > 1) {
-          console.log(
-            `lebih dari satu voucher bertahan untuk ${item.sku} , saatnya memilih yang paling untung`
-          );
           let palingUntung = 0;
           let palingUntungVoucher = null;
 
-          for (const voucher of MultiMatch) {
-            //cari yang paling untung
-            const rupiah = voucher?.potongan;
-            palingUntung = voucher;
+          for (const candidate of MultiMatch) {
+            const rupiah = candidate?.potongan;
             if (rupiah > palingUntung) {
               palingUntung = rupiah;
-              palingUntungVoucher = voucher;
+              palingUntungVoucher = candidate;
             }
           }
           voucher = palingUntungVoucher;
         } else if (MultiMatch?.length == 1) {
-          console.log(
-            "MultiVoucherDB hanya tersisa satu, maka langsung implementasikan"
-          );
           voucher = MultiMatch[0];
         }
 
@@ -107,22 +84,18 @@ const VoucherOfflineCreationOnly = () => {
               quantityTersedia: voucher?.quantityTersedia,
             },
           };
-        } else {
-          return null;
         }
+        return null;
       })
     );
 
-    // Filter out the null values from updatedItems
-    const bukanNull = updatedItems.filter((item) => item !== null);
-    return bukanNull;
+    return updatedItems.filter((item) => item !== null);
   };
 
   const fetchVoucherFilter = async () => {
     let voucherDB = voucherOffline;
 
     try {
-      // Memeriksa apakah ada data di local storage
       if (voucherDB?.length) {
         const processesedItems = await applyVoucherToItems(
           voucherDB,
@@ -134,11 +107,7 @@ const VoucherOfflineCreationOnly = () => {
           await AsyncStorage.getItem("voucher")
         );
         if (!voucherStorage) {
-          if (Platform.OS == "android")
-            ToastAndroid?.show(
-              "gagal mengambil voucher dari local, coba sync ulang",
-              ToastAndroid.SHORT
-            );
+          if (Platform.OS == "android") return;
         } else {
           setVoucherOffline(voucherStorage);
           const processesedItems = await applyVoucherToItems(
@@ -149,67 +118,53 @@ const VoucherOfflineCreationOnly = () => {
         }
       }
     } catch (error) {
-      console.log(error);
-      ToastAndroid?.show(
-        "gagal mengambil diskon dari local, coba sync",
-        ToastAndroid.SHORT
-      );
+      if (environment == "production") return;
+      else {
+        console.log("gagal mengambil voucher dari local, coba sync");
+      }
     }
   };
 
   const debounceTimeout = useRef(null);
   useEffect(() => {
     if (!currentBill || !futureVoucherEnabled) return;
-    clearTimeout(debounceTimeout.current); // Hapus timeout sebelumnya jika ada
+    clearTimeout(debounceTimeout.current);
     debounceTimeout.current = setTimeout(() => {
       fetchVoucherFilter();
-    }, debounceTime); // Tunggu 500ms sebelum memanggil fetchDiskon (bisa disesuaikan)
-    return () => clearTimeout(debounceTimeout.current); // Cleanup jika `currentBill` berubah sebelum debounce selesai
-  }, [currentBill]);
+    }, debounceTime);
+    return () => clearTimeout(debounceTimeout.current);
+  }, [currentBill, futureVoucherEnabled]);
+
+  if (!futureVoucherEnabled || !futureVoucher?.length) return null;
 
   return (
-    <View className=" justify-between">
-      <Text className="text-xs text-gray-500 font-bold font-aldrich">
+    <View className="py-1">
+      <Text className="text-xs text-gray-500 font-bold font-aldrich mb-1">
         Fitur Future Voucher (Active)
       </Text>
-      <View className="flex-1 w-full ">
-        {futureVoucher.length ? (
-          futureVoucher.map((vouch, index) => (
-            <View key={index} className="flex flex-col w-full">
-              {/* Voucher Description */}
-              <View className="flex justify-between w-full gap-x-3">
+      <View className="w-full">
+        {futureVoucher.map((vouch, index) => (
+          <View key={index} className="flex flex-col w-full py-1 border-b border-gray-100">
+            <View className="flex-row justify-between w-full gap-x-3 items-center">
+              <Text className="text-xs text-gray-500 font-aldrich flex-1">
+                {vouch?.description}
+              </Text>
+              <View className="flex-row items-center gap-x-2">
                 <Text className="text-xs text-gray-500 font-aldrich">
-                  {vouch?.description}
+                  {vouch?.voucherInfo?.judulVoucher || "Voucher tidak berjudul"}
                 </Text>
-
-                {/* Voucher Info */}
-                <View className="flex-row items-center absolute right-0 justify-between">
-                  <Text className="text-xs text-gray-500 font-aldrich">
-                    {vouch?.voucherInfo?.judulVoucher ||
-                      "Voucher tidak berjudul"}
-                  </Text>
-
-                  <View className="flex-row items-center gap-x-3 justify-between ml-2">
-                    <Text>
-                      <TicketPercent size={13} color={"green"} />
-                    </Text>
-                    <Text className="font-aldrich text-xs">
-                      {Intl.NumberFormat("id-ID", {
-                        style: "currency",
-                        currency: "IDR",
-                        minimumFractionDigits: 0,
-                      }).format(vouch?.voucherInfo?.potongan)}
-                    </Text>
-                  </View>
-                </View>
+                <TicketPercent size={13} color={"green"} />
+                <Text className="font-aldrich text-xs">
+                  {Intl.NumberFormat("id-ID", {
+                    style: "currency",
+                    currency: "IDR",
+                    minimumFractionDigits: 0,
+                  }).format(vouch?.voucherInfo?.potongan)}
+                </Text>
               </View>
             </View>
-          ))
-        ) : (
-          <Text className="text-xs font-aldrich text-gray-500">
-            Tidak ada Future Use Voucher
-          </Text>
-        )}
+          </View>
+        ))}
       </View>
     </View>
   );

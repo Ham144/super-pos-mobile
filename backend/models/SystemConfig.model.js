@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 
+// global settings untuk semua outlet
 const systemConfigSchema = new mongoose.Schema(
   {
     _id: {
@@ -48,6 +49,11 @@ const systemConfigSchema = new mongoose.Schema(
       default: "",
     },
     AD_BASE_DN: {
+      type: String,
+      default: "",
+    },
+    // whatsapp global (Fonnte token)
+    WHATSAPP_API_KEY: {
       type: String,
       default: "",
     },

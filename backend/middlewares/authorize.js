@@ -16,6 +16,7 @@ const skipOutletAccessCheck = (url) => {
   return (
     path === "/api/v1/auth/logout" ||
     path === "/api/v1/auth/getuserinfo" ||
+    path === "/api/v1/auth/getuserinfocomplete" ||
     path === "/api/v1/outlet/simple-outlet-list" ||
     path.startsWith("/api/v1/outlet/switch-outlet/")
   );
@@ -65,7 +66,7 @@ const authorize = async (req, res, next) => {
           code: "OUTLET_REQUIRED",
         });
       }
-
+        
       const allowed = await hasOutletAccess(userDB._id, userDB.currentOutlet);
       if (!allowed) {
         return res.status(403).json({

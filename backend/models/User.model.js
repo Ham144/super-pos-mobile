@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { DEFAULT_BLOCKED_ACCESS_LDAP } from "../constants/accessControl.js";
 
 const userSchema = new mongoose.Schema(
   {
@@ -10,6 +11,14 @@ const userSchema = new mongoose.Schema(
     },
     password: {
       type: String,
+    },
+    email: {
+      type: String,
+      default: "",
+    },
+    telepon: {
+      type: String,
+      default: "",
     },
     authMethod: {
       type: String,
@@ -43,18 +52,21 @@ const userSchema = new mongoose.Schema(
       default: "Kasir",
     },
     blockedAccess: {
-      //logika terbalik [block page, atau enpoint],
+      // deny-list: UI paths (/item_library) and/or API prefixes (/api/v1/...)
       type: [String],
-      default: ["Item Library", "Promo", "Diskon", "Voucher", "Super Admin"],
+      default: () => [...DEFAULT_BLOCKED_ACCESS_LDAP],
     },
     kodeKasir: {
       type: String,
       unique: true,
     }, //3 huruf random dari usernamenya exp: HM1 krn username yafizham
+    // Optional until user is on an outlet.kasirList (LDAP first login).
+    // authorize.js returns OUTLET_REQUIRED when missing / not in kasirList.
     currentOutlet: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Outlet",  
-      required: true,
+      ref: "Outlet",
+      required: false,
+      default: null,
     },
   },
   { timestamps: true },

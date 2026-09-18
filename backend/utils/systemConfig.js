@@ -15,6 +15,8 @@ const fallbackEnvConfig = () => ({
   AD_PORT: Number(process.env.AD_PORT) || 389,
   AD_DOMAIN: process.env.AD_DOMAIN || "",
   AD_BASE_DN: process.env.AD_BASE_DN || "",
+  WHATSAPP_API_KEY:
+    process.env.WHATSAPP_API_KEY || process.env.FONNTE_TOKEN || "",
 });
 
 const toBoolean = (value, fallback = false) => {
@@ -57,6 +59,7 @@ const sanitizeConfig = (config = {}, fallback = fallbackEnvConfig()) => ({
     config.PASS_DOWNLOAD_APK,
     fallback.PASS_DOWNLOAD_APK
   ),
+  WHATSAPP_API_KEY: preferValue(config.WHATSAPP_API_KEY, fallback.WHATSAPP_API_KEY),
 });
 
 export const getSystemConfigDoc = async () => {
@@ -72,21 +75,30 @@ export const getEffectiveSystemConfig = async () => {
     AD_PORT: toPort(doc?.AD_PORT, fallback.AD_PORT),
     AD_DOMAIN: preferValue(doc?.AD_DOMAIN, fallback.AD_DOMAIN),
     AD_BASE_DN: preferValue(doc?.AD_BASE_DN, fallback.AD_BASE_DN),
+    WHATSAPP_API_KEY: preferValue(doc?.WHATSAPP_API_KEY, fallback.WHATSAPP_API_KEY),
   };
 };
 
 export const getActiveDirectoryConfig = async () => {
   const config = await getEffectiveSystemConfig();
 
-  if (!config.AD_HOST || !config.AD_DOMAIN || !config.AD_BASE_DN) {
-    throw new Error("Konfigurasi Active Directory belum lengkap");
+  // HOST wajib. DOMAIN dibutuhkan untuk bind DOMAIN\user.
+  // BASE_DN opsional — auth.route bisa ambil dari RootDSE defaultNamingContext.
+  if (!config.AD_HOST) {
+    throw new Error("Konfigurasi Active Directory belum lengkap (AD_HOST)");
+  }
+
+  if (!config.AD_DOMAIN) {
+    throw new Error(
+      "Konfigurasi Active Directory belum lengkap (AD_DOMAIN / NetBIOS, mis. csi)",
+    );
   }
 
   return {
     AD_HOST: config.AD_HOST,
     AD_PORT: config.AD_PORT || 389,
     AD_DOMAIN: config.AD_DOMAIN,
-    AD_BASE_DN: config.AD_BASE_DN,
+    AD_BASE_DN: config.AD_BASE_DN || "",
   };
 };
 
@@ -102,6 +114,7 @@ export const getPublicSystemConfig = async () => {
     passDownloadApk: "",
     hasEmailPass: Boolean(config.EMAIL_PASS),
     hasDownloadApkPass: Boolean(config.PASS_DOWNLOAD_APK),
+    fonnteToken: config.WHATSAPP_API_KEY,
   };
 };
 
@@ -130,6 +143,7 @@ export const saveSystemConfig = async (payload = {}) => {
         payload.PASS_DOWNLOAD_APK === ""
           ? preferValue(current?.PASS_DOWNLOAD_APK, fallback.PASS_DOWNLOAD_APK)
           : payload.PASS_DOWNLOAD_APK,
+      WHATSAPP_API_KEY: preferValue(payload.WHATSAPP_API_KEY, preferValue(current?.WHATSAPP_API_KEY, fallback.WHATSAPP_API_KEY)),
     },
     fallback
   );
@@ -146,6 +160,9 @@ export const saveSystemConfig = async (payload = {}) => {
   }
   if (payload.AD_BASE_DN !== undefined) {
     adFields.AD_BASE_DN = preferValue(payload.AD_BASE_DN, fallback.AD_BASE_DN);
+  }
+  if (payload.WHATSAPP_API_KEY !== undefined) {
+    adFields.WHATSAPP_API_KEY = preferValue(payload.WHATSAPP_API_KEY, fallback.WHATSAPP_API_KEY);
   }
 
   return SystemConfig.findByIdAndUpdate(
@@ -180,6 +197,63 @@ export const saveAdConfig = async (payload = {}) => {
     AD_DOMAIN: payload.AD_DOMAIN,
     AD_BASE_DN: payload.AD_BASE_DN,
   });
+};
+
+export const clearAdConfig = async () => {
+  return SystemConfig.findByIdAndUpdate(
+    CONFIG_ID,
+    {
+      _id: CONFIG_ID,
+      AD_HOST: "",
+      AD_PORT: 389,
+      AD_DOMAIN: "",
+      AD_BASE_DN: "",
+    },
+    { new: true, upsert: true, setDefaultsOnInsert: true },
+  ).lean();
+};
+
+export const getPublicWhatsappConfig = async () => {
+  const config = await getEffectiveSystemConfig();
+  const token = config.WHATSAPP_API_KEY || "";
+  return {
+    WHATSAPP_API_KEY: token,
+    hasToken: Boolean(token),
+    maskedToken: token
+      ? `${token.slice(0, 4)}${"*".repeat(Math.max(token.length - 8, 0))}${token.slice(-4)}`
+      : "",
+  };
+};
+
+export const saveWhatsappConfig = async (payload = {}) => {
+  const token =
+    payload.WHATSAPP_API_KEY !== undefined
+      ? String(payload.WHATSAPP_API_KEY)
+      : undefined;
+
+  if (token === undefined) {
+    throw new Error("WHATSAPP_API_KEY wajib dikirim");
+  }
+
+  return SystemConfig.findByIdAndUpdate(
+    CONFIG_ID,
+    {
+      _id: CONFIG_ID,
+      WHATSAPP_API_KEY: token,
+    },
+    { new: true, upsert: true, setDefaultsOnInsert: true },
+  ).lean();
+};
+
+export const clearWhatsappConfig = async () => {
+  return SystemConfig.findByIdAndUpdate(
+    CONFIG_ID,
+    {
+      _id: CONFIG_ID,
+      WHATSAPP_API_KEY: "",
+    },
+    { new: true, upsert: true, setDefaultsOnInsert: true },
+  ).lean();
 };
 
 export const deleteSystemConfig = async () => {

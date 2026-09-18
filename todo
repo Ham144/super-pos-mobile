@@ -87,6 +87,8 @@ bug fixing 2026-06-10
 [x] bisa login dengan ldap
 [x] outlet switcher
 [] sempurkanan pendekatan inventory "stateless" dan 'offline'
+[x] whatsapp customer untuk kirim kwitansi pembayaran /kwitansi_pembayaran_tertunda
+[x] Active directory configuration
 ## alur inventory list:
 - sumber katalog SELALU InventoryRefrensi (bukan SOAP)
 - offline: dump ke AsyncStorage + sync-offline-mode

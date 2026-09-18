@@ -389,20 +389,19 @@ const RegisterInvoice = ({ fullWidth = false }) => {
           />
 
           <View className="flex-1 min-h-0">
-            <BillItems
-              onEditItem={handleEditBillItem}
-              onRemoveItem={async (item) => {
-                useCurrentBill.getState().removeFromCurrentBill(item);
-                const nextBill = useCurrentBill.getState().currentBill || [];
-                await syncNavUndoAfterLineChange(nextBill, [item.sku]);
-              }}
-            />
+            <View style={{ flex: 1, minHeight: 0 }}>
+              <BillItems
+                onEditItem={handleEditBillItem}
+                onRemoveItem={async (item) => {
+                  useCurrentBill.getState().removeFromCurrentBill(item);
+                  const nextBill = useCurrentBill.getState().currentBill || [];
+                  await syncNavUndoAfterLineChange(nextBill, [item.sku]);
+                }}
+              />
+            </View>
 
-            <BillAdjustmentsPanel
-              promoEnabled={promoEnabled}
-              diskonEnabled={diskonEnabled}
-              futureVoucherEnabled={futureVoucherEnabled}
-            />
+            {/* Shrink-wrap: only consumes height when promo/diskon/voucher UI exists */}
+            <BillAdjustmentsPanel />
           </View>
 
           <BillTotalsFooter

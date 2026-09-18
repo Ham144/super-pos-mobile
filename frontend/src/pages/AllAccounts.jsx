@@ -3,16 +3,14 @@ import React, { useEffect, useState } from "react";
 import { deleteKasir } from "../api/kasirApi";
 import { toast } from "react-hot-toast";
 import { deleteSpg, editSpg, getAllSpg } from "../api/spgApi";
-import ModalNewAccount from "@/components/ModalNewAccount";
 import { getOuletList } from "../api/outletApi";
 import { getAllAccount, updateUser } from "@/api/authApi";
-import { mockBackend, mockPages } from "@/api/constant";
+import { blockedAccess, mockBackend, mockPages } from "@/api/constant";
 import {
   UserPlus,
   Download,
   Filter,
   Edit,
-  Trash2,
   X,
   Save,
   Eye,
@@ -30,6 +28,7 @@ import {
   ShieldX,
   BadgeInfo,
 } from "lucide-react";
+import ModalCreateNewAccount from "@/components/ModalNewAccount";
 
 const AllAccounts = () => {
   const [showEditForm, setShowEditForm] = useState(false);
@@ -43,7 +42,17 @@ const AllAccounts = () => {
   const closeEditModal = () => {
     document.getElementById("modalEditAccount")?.close();
     setShowEditForm(false);
-    setSelectedUser(null);
+    setSelectedUser({
+      _id: "",
+      username: "",
+      password: "",
+      email: "",
+      telepon: "",
+      targetHargaPenjualan: 0,
+      targetQuantityPenjualan: 0,
+      outlet: "",
+      blockedAccess: blockedAccess,
+    });
     setShowPassword(false);
   };
 
@@ -330,7 +339,7 @@ const AllAccounts = () => {
                     className="btn bg-gradient-to-r from-blue-600 to-blue-700 text-white border-0 hover:from-blue-700 hover:to-blue-800 shadow-lg shadow-blue-950/25"
                   >
                     <UserPlus className="w-5 h-5 mr-2" />
-                    Initialize New Account
+                    Create App Account
                   </button>
 
                   {/* Role Filter */}
@@ -916,7 +925,7 @@ const AllAccounts = () => {
       </dialog>
 
       {/* Modals */}
-      <ModalNewAccount id="newAccount" />
+      <ModalCreateNewAccount id="newAccount" />
     </div>
   );
 };

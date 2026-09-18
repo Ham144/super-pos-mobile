@@ -270,35 +270,6 @@ const Voucher = () => {
                     showEdit ? "flex-1" : "w-full"
                   } bg-white p-4`}
                 >
-                  <div className="flex gap-x-4 mb-4">
-                    <div
-                      role="alert"
-                      className="alert alert-warning  cursor-pointer "
-                      onClick={() => {
-                        navigate(
-                          "/artikel_documentation?search=penjelasan%20sistem%20voucher",
-                        );
-                      }}
-                    >
-                      <FileWarningIcon className="w-6 h-6" />
-
-                      <span className="max-md:text-xs">
-                        Voucher : Voucher adalah kode auto generate atas
-                        pembelian dengan syarat (quantity/total harga), voucher
-                        dapat digunakan oleh pembeli di transaksi selanjutnya.
-                        CLICK INI untuk baca sistem voucher
-                      </span>
-                      <button
-                        className="btn btn-circle btn-outline text-lg "
-                        onClick={() => {
-                          toast("Penjelasan akan muncul");
-                        }}
-                      >
-                        ?
-                      </button>
-                    </div>
-                  </div>
-
                   <div className="flex self-end   mb-4 justify-between">
                     <h2 className="md:text-xl font-bold">Daftar Voucher</h2>
                     <div className="flex gap-x-3 itemc">

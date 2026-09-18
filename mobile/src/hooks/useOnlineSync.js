@@ -26,7 +26,7 @@ export const useOnlineSync = () => {
   const { setVoucherOffline } = useVoucherOffline();
 
   const [lastSyncTime, setLastSyncTime] = useState(null);
-
+  
   const { data: isOnline = false } = useQuery({
     queryKey: ["ping"],
     queryFn: async () => {

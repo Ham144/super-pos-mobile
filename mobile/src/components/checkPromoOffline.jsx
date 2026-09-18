@@ -25,6 +25,7 @@ import {
 export default function checkPromoOffline() {
   //zustand
   const { currentBill, promo, setPromo, done } = useCurrentBill();
+
   const { debounceTime } = useDebouceTime();
 
   const { promoEnabled } = useFiturEnabled();
@@ -338,7 +339,6 @@ export default function checkPromoOffline() {
       if (!promoDB?.length) {
         const promoStorage = JSON.parse(await AsyncStorage.getItem("promo"));
         if (!promoStorage) {
-          console.log("Tidak ditemukan promo di asyncstorage, coba sync");
           return;
         }
         setPromoOffline(promoStorage);
@@ -408,74 +408,73 @@ export default function checkPromoOffline() {
     setShowEditModal(false);
   };
 
+
   return (
-    <View className="py-1">
-      <Text className="text-xs text-gray-500 font-bold font-aldrich mb-1">
-        Fitur Promo(Active)
-      </Text>
-      <View className="flex-1">
-        {promo.length ? (
-          promo.map((prom, index) => (
-            <View
-              key={index}
-              className="flex-row justify-between items-center py-1 border-b border-gray-100"
-            >
-              <View className="flex-1 flex-row gap-x-2">
-                <Text className="text-xs text-gray-500 font-aldrich">
-                  {prom?.description || ""}
-                </Text>
-              </View>
-
-              <View className="flex-row items-center w-1/2 justify-end gap-x-2">
-                <Text className="text-xs text-gray-500 font-aldrich mr-2">
-                  {prom?.promoInfo?.judulPromo || ""}
-                </Text>
-                <TouchableOpacity
-                  onPress={() => {
-                    if (done) {
-                      Alert.alert(
-                        "Transaksi sudah selesai",
-                        ToastAndroid.SHORT
-                      );
-                      return;
-                    }
-                    setSelectedPromo(prom);
-                    setShowEditModal(true);
-                  }}
-                  className="flex-row items-center gap-x-2 bg-green-500 text-white px-2 py-1 rounded-full"
-                >
-                  <Pencil size={14} color="white" />
-                  <Text className="text-xs text-white">
-                    {prom.promoInfo?.quantityBonus || "no set"} x
+    <>
+      {promoEnabled && promo?.length > 0 ? (
+        <View className="py-1">
+          <Text className="text-xs text-gray-500 font-bold font-aldrich mb-1">
+            Fitur Promo(Active)
+          </Text>
+          <View>
+            {promo.map((prom, index) => (
+              <View
+                key={index}
+                className="flex-row justify-between items-center py-1 border-b border-gray-100"
+              >
+                <View className="flex-1 flex-row gap-x-2">
+                  <Text className="text-xs text-gray-500 font-aldrich">
+                    {prom?.description || ""}
                   </Text>
-                </TouchableOpacity>
-                <View className="flex-row items-center gap-x-1">
-                  <Gift size={12} color={"green"} />
+                </View>
 
+                <View className="flex-row items-center w-1/2 justify-end gap-x-2">
+                  <Text className="text-xs text-gray-500 font-aldrich mr-2">
+                    {prom?.promoInfo?.judulPromo || ""}
+                  </Text>
                   <TouchableOpacity
-                    onPress={() => handleOpenPromoBonusModalChange(prom)}
+                    onPress={() => {
+                      if (done) {
+                        Alert.alert(
+                          "Transaksi sudah selesai",
+                          ToastAndroid.SHORT
+                        );
+                        return;
+                      }
+                      setSelectedPromo(prom);
+                      setShowEditModal(true);
+                    }}
+                    className="flex-row items-center gap-x-2 bg-green-500 text-white px-2 py-1 rounded-full"
                   >
-                    <Text className="text-xs font-extrabold underline font-aldrich text-blue-600">
-                      {prom.promoInfo?.skuBarangBonus}
+                    <Pencil size={14} color="white" />
+                    <Text className="text-xs text-white">
+                      {prom.promoInfo?.quantityBonus || "no set"} x
+                    </Text>
+                  </TouchableOpacity>
+                  <View className="flex-row items-center gap-x-1">
+                    <Gift size={12} color={"green"} />
+
+                    <TouchableOpacity
+                      onPress={() => handleOpenPromoBonusModalChange(prom)}
+                    >
+                      <Text className="text-xs font-extrabold underline font-aldrich text-blue-600">
+                        {prom.promoInfo?.skuBarangBonus}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => handleDeletePromoCurrentBill([prom._id])}
+                  >
+                    <Text>
+                      <Delete size={23} color="red" />
                     </Text>
                   </TouchableOpacity>
                 </View>
-                <TouchableOpacity
-                  onPress={() => handleDeletePromoCurrentBill([prom._id])}
-                >
-                  <Text>
-                    <Delete size={23} color="red" />
-                  </Text>
-                </TouchableOpacity>
               </View>
-            </View>
-          ))
-        ) : (
-          <Text className="text-xs font-aldrich text-gray-500">
-            Tidak ada promo
-          </Text>
-        )}
-      </View>
+            ))}
+          </View>
+        </View>
+      ) : null}
       <PilihInventoryModal
         visible={pilihPromoShow}
         setVisible={setPilihPromoShow}
@@ -494,6 +493,6 @@ export default function checkPromoOffline() {
         selectedPromo={selectedPromo}
         setSelectedPromo={setSelectedPromo}
       />
-    </View>
+    </>
   );
 }

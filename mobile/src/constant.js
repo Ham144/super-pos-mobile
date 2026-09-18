@@ -39,3 +39,8 @@ export const getMobileAuthHeaders = async () => {
   const token = await AsyncStorage.getItem("token");
   return { mobile: `Bearer ${token}` };
 };
+
+export const MODE_OUTLET  = {
+  stateless: "stateless",
+  offline: "offline",
+}

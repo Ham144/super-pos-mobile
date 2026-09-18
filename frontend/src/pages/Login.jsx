@@ -26,7 +26,7 @@ export default function Login({ className, ...props }) {
   const [isVerifying, setIsVerifying] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [authMethod, setAuthMethod] = useState("app");
-
+  
   const path = useLocation().pathname;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
