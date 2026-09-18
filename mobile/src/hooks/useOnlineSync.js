@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getisOnline,
   getOuletByUserId,
-  syncDiskonPromoVoucherInventories,
+  syncronizeOfflineMode,
 } from "../api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Alert, Platform, ToastAndroid } from "react-native";
@@ -46,7 +46,7 @@ export const useOnlineSync = () => {
     useMutation({
       mutationFn: async () => {
         try {
-          const res = await syncDiskonPromoVoucherInventories(isOnline);
+          const res = await syncronizeOfflineMode(isOnline);
           return res;
         } catch (error) {
           if (Platform.OS === "android" || Platform.OS === "ios") {

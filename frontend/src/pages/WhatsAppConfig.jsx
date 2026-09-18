@@ -154,14 +154,16 @@ const WhatsAppConfig = () => {
           </div>
           <button
             type="button"
-            onClick={loadConfig}
+            onClick={() => {
+              window.open("https://md.fonnte.com/new/device.php", "_blank");
+            }}
             disabled={isLoading}
             className="px-4 py-2 text-sm bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2 text-gray-700"
           >
-            <RefreshCw
+            <KeyRound
               className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`}
             />
-            Refresh
+            Dapatkan Token
           </button>
         </div>
 

@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import React, { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getOuletByUserId, syncDiskonPromoVoucherInventories } from "../api";
+import { getOuletByUserId, syncronizeOfflineMode } from "../api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   Settings,
@@ -61,7 +61,7 @@ const PengaturanOutlet = () => {
 
   // Mutation for synchronizing data
   const { mutate: syncData, isPending: isSyncing } = useMutation({
-    mutationFn: () => syncDiskonPromoVoucherInventories(isOnline, userInfo),
+    mutationFn: () => syncronizeOfflineMode(isOnline, userInfo),
     onSuccess: async (data) => {
       if (data?.outlet) {
         try {

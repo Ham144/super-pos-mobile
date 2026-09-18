@@ -1,8 +1,122 @@
-# React + Vite
+✅web : simpan token di cookie (cors creadentials: true, /login res.cookie, cookieParser())
+✅Ganti secure true jika production kalau prod https (auth.route /login)
+✅perbaiki customer
+✅perbaiki voucher
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+✅-perbaiki tidak bisa print di prod
+✅-fix struk & tambh config footer(npwp, alamat, nama perusahaan) edit di outlet
+✅-fitur settlement : fitur untuk print hasil rekap penjualan(meliputi: totalHarga, totalPenjualan) ditanggal yang sama.
+✅-Dialog nomorTransaksi saat bayar (opsional)
+✅-fitur ganti quantity free bonus ditengah jalan
+✅-fitur batalin (void) dari mobile dan konfirmasi di web
+✅-perbaiki complete all PO(invalidate queries nya ga jalan)
+✅-tambah field hubungkan outlet dengan brand tertentu saja
+✅-tambah fitur reset data sebagian, untuk initilisasi data dari awal lagi(untuk kasus brand ditambah saat user sudah load item Library/inventory)
+✅-fitur filter by brand di /item_library (default: brand terkait)
 
-Currently, two official plugins are available:
+## //retest dan sempurna kan fitur
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+//fixing bug besar
+✅-fix printer mengembalikan berhasil, tapi tidak keluar
+✅-fitur voucher penyempurnaan bisa discan QR & share, bisa di redeem, voucher code terkirim keemail customer, voucher redemption perlu online untuk menghindari redeem curang di outlet yang berbeda
+✅-optimasi lanjutan: cari peluang penumpukan cache penggunaan terus menerus lama.
+✅-csv horizontal saja kecuali 2 item dalam currentBill
+✅-salesReport: hanya tamplin filter dan penjualan berdasarkan metode pembayaran
+✅-hanya download spg ke asyncstorage yang terkait my outlet sj
+
+✅-voucher bisa scan qr dan redeem langsung kirim keemail [private voucher]
+✅-private voucher bisa redeem di mobile
+✅-mencari bug fitur void
+-ada field baru di outlet periodeSettlement, jamSettlement, dan field kodeInvoice di oulet, gunanya untuk filtering perolehan kasir dan spg dan outlet utamannya, per periode settlement yang ditentukan(query settlemnt: ambil semua invoice, lalu filter outletnya dengan kodeOutlet yang terdapat didalam kodeInvoice, lalu filter tanggal nya, dst).
+✅-fitur pagination rusak di item_library
+
+//belakangan
+-kasih security [rate limiter, helmet, csrf, dll]
+-bug edit modalBrandPick di web
+
+[x] fix: search sku manual edit PO
+[x] fix: gagal receive PO krn quantity negativ (fix: matikan tombol selesaikan semua)
+[x] fix: settlement total (mobile) tidak sama dengan yg diweb karena optimasi data
+[x] fix: pencegahan SKU duplikat dalam 1 PO
+[x] fix: fitur Sorting kolom invoices dan item_library
+[x] download csv PO simple
+
+//perubahan mobile
+[x] invoice print auto dua kali (ori dan copy)
+[x] fitur: print struk end of day : pengelompokan transaksi hari ini berdasarkan sku (logic backend jg)
+[x] update: pemindahan logika (settlement pengelompokan payment method) ke backend supaya ngitungnya cepat
+[x] fitur: ext code sudah bisa dicari di page invoice(web) dan bill history
+[x] fix: fitur promo, diskon, futureVoucher harusnya default aktiv bukan inactive
+//perubahan web
+[x] fitur: stack trace tiap item dari awal spawn hingga tiap perubahan item di item_library dan downloadable di buku besar item. meliputi :
+
+-bulPriceupdate ga nemu(spawn)
+-create manual di item_library (spawn)
+-perbarui data dari middleware (spawn)
+-bulPrice update quantity (increase / decrease)
+-edit manual di item_library (increase / decrease)
+-sync mobile (increase / decrease)
+-void (decrease)
+
+//fix
+[x] perbaiki export saat ini yang harganya saatdi export 300 padahal 300000
+[x] field nomorTransaksi juga perlu dikeluarkan saat export
+[x] fix: showPassword tidak kelihatan
+[x] fix: keluarkan data lebih lengkap untuk export csv
+
+bug fixing 2026-06-10
+[x] fix sync spg
+[x] fix eror ga keluar di page
+[x] gambar product tidak muncul / gagal upload
+[x] edit harga single kadang gagal-kadang berhasil
+[x] import purchase order bulk import telah disempurnakan
+[x] import item library telah disempurnakan
+[x] import diskon
+[x] import promo
+[x] tampilan lebih simple di mobile halaman invoices
+[x] sekarang favorites sinkron antar outlet, jadi tidak perlu setup 1-1
+[x] gambar favorites tidak muncul dimobile
+[x] rapikan format csv export
+[x] create new account tidak ada tombol save
+[fail] item isDisabled harusnya tidak muncul di mobile
+[x] optimasi kecepatan lanjutan
+
+// new clone
+[x] super_pos_csi: inventory dan qty juga bisa disambungkan dengan nav
+[x] super_pos_csi: bayarnya ke payment gateway
+[x] bisa login dengan ldap
+[x] outlet switcher
+[] sempurkanan pendekatan inventory "stateless" dan 'offline'
+[x] whatsapp customer untuk kirim kwitansi pembayaran /kwitansi_pembayaran_tertunda
+[x] Active directory configuration
+## alur inventory list:
+- sumber katalog SELALU InventoryRefrensi (bukan SOAP)
+- offline: dump ke AsyncStorage + sync-offline-mode
+- stateless: fetch partial/live dari getAllinventoriesMobile (tanpa AsyncStorage dump), jangan sentuh sync-offline-mode
+# SOAP dipakai belakangan untuk alur bill/stock check, bukan daftar library
+[] super_pos_csi: bisa input biaya berdasarkan category yg di config
+[] super_pos_csi: check stock berdasarkan wilayah (SOAP)
+# optimaasi lanjutan
+[x] /all_account page editing modal
+[x] /outlet page editing modal
+[x] /item_library page editing modal
+[x] dapatkan initial inventory dari soap (mode stateless) 
+[x] dapatkan initial inventory dari soap (mode offline) 
+
+
+note: 
+## alur logika outlet mode stateless: 
+### jangan pakai syncMobileRoute, buat endpoint baru aja. syncMobileRoute biar untuk outlet mode offline
+- di sebelah kiri tampilkan daftar inventory langsung dari GetInventoryByLocationMultiple dengan cara get partial yang terlihat di layar
+(optional layer start )
+- klik tombol cetak bill: jika kasir  menetapkan diskon maka hanya simpan bill ke db dengan status menunggu konfirmasi approve discount tanpa hit function soap
+(optional layer start)
+- klik tombol cetak bill: saat tombol cetak bill (customer). jalankan soap SalesOrderAutoPostingShip dan simpan bill ke db untuk tau apakah di gudang ready
+- struk customer akan keluar dan diberikan ke customer untuk dibaca
+(optional layer start)
+- user meminta sku tertentu di hapus/diedit: maka soap GetSalesShipmentLines -> soap WsUndoShipment 
+(optional layer end)
+- tombol bayar berhasil: ubah status bill done: true, jalankan WsPostInvoiceSO
+(optional layer start )
+- void: di keesokan hari user ingin semua pembelian sku dalam 1 bill dibatalkan jalankan soap GetSalesShipmentLines -> soapWsUndoShipment 
+(optional layer end)

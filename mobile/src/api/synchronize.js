@@ -40,8 +40,8 @@ const saveToAsyncStorage = async (key, newData) => {
     }
   };
   
-  //sinkronisasi
-  export const syncDiskonPromoVoucherInventories = async (isOnline) => {
+  //sinkronisasi sync dump utama outlet.mode == mode
+  export const syncronizeOfflineMode = async (isOnline) => {
     const token = await AsyncStorage.getItem("token");
   
     if (!isOnline) {
