@@ -10,6 +10,7 @@ import {
 import { useCurrentBill } from "../store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { initializePaymentMethod } from "../api";
+import useSpg from "../hooks/useSpg";
 
 const DetailModal = ({ visible, setModalVisible, handleCetakBill }) => {
   const {
@@ -18,13 +19,14 @@ const DetailModal = ({ visible, setModalVisible, handleCetakBill }) => {
     paymentMethod: currentPaymentMethod,
     spg: currentSpg,
   } = useCurrentBill();
-  const [spgList, setSpgList] = useState([]);
   const [paymentMethodList, setPaymentMethodList] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [filteredSpgList, setFilteredSpgList] = useState([]);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null);
   const [selectedSpg, setSelectedSpg] = useState(null);
   const [selectedMode, setSelectedMode] = useState("fallback");
+
+  
 
   const midtransMethods = useMemo(
     () =>
@@ -84,26 +86,7 @@ const DetailModal = ({ visible, setModalVisible, handleCetakBill }) => {
     fetchPaymentMethods();
   }, [visible]);
 
-  useEffect(() => {
-    const fetchSpgList = async () => {
-      try {
-        const spgListFromStorage = await AsyncStorage.getItem("spg");
-        if (spgListFromStorage) {
-          const parsedList = JSON.parse(spgListFromStorage);
-          setSpgList(parsedList);
-          setFilteredSpgList(parsedList);
-          return;
-        }
-        setSpgList([]);
-        setFilteredSpgList([]);
-      } catch (error) {
-        console.error("Error fetching SPG list:", error);
-        setSpgList([]);
-        setFilteredSpgList([]);
-      }
-    };
-    fetchSpgList();
-  }, [visible]);
+  const { spgList = [], refetchSpgList } = useSpg();
 
   useEffect(() => {
     if (!visible) return;
@@ -265,7 +248,7 @@ const DetailModal = ({ visible, setModalVisible, handleCetakBill }) => {
               Midtrans atau fallback manual.
             </Text>
           </View>
-
+    
           <ScrollView className="max-h-[60vh]">
             <View className="gap-4">
               <View className="rounded-xl bg-gray-100 p-3">
@@ -322,7 +305,7 @@ const DetailModal = ({ visible, setModalVisible, handleCetakBill }) => {
                         </Text>
                         <TouchableOpacity
                           onPress={() => {
-                            fetchSpgList();
+                            refetchSpgList();
                           }}
                         >
                           <Text className="text-blue-600 text-center underline btn">

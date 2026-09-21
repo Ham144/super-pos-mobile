@@ -78,7 +78,7 @@ const WhatsAppConfig = () => {
       setIsSaving(false);
     }
   };
-
+  
   const handleDelete = async () => {
     if (!window.confirm("Hapus token WhatsApp dari konfigurasi global?")) {
       return;

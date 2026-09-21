@@ -15,7 +15,6 @@
 ✅-fitur filter by brand di /item_library (default: brand terkait)
 
 ## //retest dan sempurna kan fitur
-
 //fixing bug besar
 ✅-fix printer mengembalikan berhasil, tapi tidak keluar
 ✅-fitur voucher penyempurnaan bisa discan QR & share, bisa di redeem, voucher code terkirim keemail customer, voucher redemption perlu online untuk menghindari redeem curang di outlet yang berbeda
