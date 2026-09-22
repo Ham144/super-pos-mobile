@@ -34,7 +34,7 @@ router.post("/sync-offline-mode", authenticate, async (req, res) => {
 
   try {
     //pertama paling awal, coba cek terlebih dahulu kecocokan data terutama outlet, jika tidak lagi cocok maka lebih baik login ulang diaplikasi
-    console.log("start syncing.......");
+    
     const myOutletInDB = await Outlet.findOne({
       kasirList: {
         $in: [updatedUser?._id],
@@ -225,11 +225,28 @@ router.post("/sync-offline-mode", authenticate, async (req, res) => {
       } else {
         // Jika invoice baru (tidak ditemukan di DB)
 
-        // Ambil data outlet untuk mendapatkan INCcodeInvoice
-        const kodeOutlet = bill?.kodeInvoice?.slice(0, 2);
-        const outletDB = await Outlet.findOne({ kodeOutlet: kodeOutlet });
+        // Mobile _id: `${kodeOutlet}-${username}-${timestamp}` — jangan slice(0,2)
+        // (kodeOutlet bisa "PRJ_JKT" / "SRNG_JUAL", bukan 2 digit lama)
+        const kodeOutletFromId = String(bill?._id || "").split("-")[0];
+        let outletDB = kodeOutletFromId
+          ? await Outlet.findOne({ kodeOutlet: kodeOutletFromId })
+          : null;
 
-        if (outletDB) {
+        if (!outletDB && bill?.kodeInvoice) {
+          const allOutlets = await Outlet.find().select("kodeOutlet").lean();
+          const matched = allOutlets
+            .filter((o) =>
+              String(bill.kodeInvoice).startsWith(String(o.kodeOutlet)),
+            )
+            .sort((a, b) => b.kodeOutlet.length - a.kodeOutlet.length)[0];
+          if (matched) {
+            outletDB = await Outlet.findOne({ kodeOutlet: matched.kodeOutlet });
+          }
+        }
+
+        const kodeOutlet = outletDB?.kodeOutlet;
+
+        if (outletDB && kodeOutlet) {
           // Buat kodeInvoice baru dengan menggabungkan format awal + INCcodeInvoice dari outlet
           // Gunakan findOneAndUpdate dengan $inc untuk mencegah race condition
           const outletUpdate = await Outlet.findOneAndUpdate(
@@ -240,12 +257,14 @@ router.post("/sync-offline-mode", authenticate, async (req, res) => {
 
           const INCcodeInvoice = outletUpdate.jumlahInvoice;
 
-          // Pastikan kodeInvoice hanya terdiri dari prefix (kodeOutlet+kodeKasir+tanggal) tanpa nomor urut yang mungkin sudah ada
-          // Format: 01KAR2503 (kodeOutlet+kodeKasir+tanggal) + 00001 (nomor urut)
-          // Extract kodeOutlet (2 char) + kodeKasir (3 char) + tanggal (4 char) = total 9 karakter
+          // Prefix = kodeOutlet + kodeKasir + YYMM (panjang dinamis, bukan hardcode 9)
+          // Fallback: pakai kodeInvoice mobile apa adanya + nomor urut
           let kodeInvoicePrefix = bill.kodeInvoice;
-          if (kodeInvoicePrefix.length > 9) {
-            kodeInvoicePrefix = kodeInvoicePrefix.substring(0, 9);
+          const kasirLen = 3;
+          const yymmLen = 4;
+          const expectedPrefixLen = kodeOutlet.length + kasirLen + yymmLen;
+          if (kodeInvoicePrefix.length > expectedPrefixLen) {
+            kodeInvoicePrefix = kodeInvoicePrefix.substring(0, expectedPrefixLen);
           }
 
           const newKodeInvoice =

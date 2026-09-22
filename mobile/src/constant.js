@@ -17,7 +17,7 @@ export const APP_DESC =
 /** Shared HTTP helpers — import from here, not from api.js (avoids circular deps). */
 export const getBaseUrl = async () => {
   const storedBaseUrl = await AsyncStorage.getItem("BASE_URL");
-
+  
   if (storedBaseUrl) {
     try {
       const parsedBaseUrl = JSON.parse(storedBaseUrl);
@@ -40,7 +40,33 @@ export const getMobileAuthHeaders = async () => {
   return { mobile: `Bearer ${token}` };
 };
 
-export const MODE_OUTLET  = {
+export const MODE_OUTLET = {
   stateless: "stateless",
   offline: "offline",
-}
+};
+
+/**
+ * Susun objek customer bill. Tidak hardcode "UNKNOWN" —
+ * nama default diambil dari outlet.defaultSellToCustName (seed/CRUD).
+ */
+export const resolveBillCustomer = (
+  { name, phone, alamat } = {},
+  { defaultName } = {},
+) => {
+  const resolvedName = name || defaultName || "";
+  const hasRealData = Boolean(resolvedName || phone || alamat);
+
+  if (!hasRealData) {
+    return {
+      name: "",
+      phone: null,
+      alamat: null,
+    };
+  }
+
+  return {
+    name: resolvedName,
+    phone: phone || null,
+    alamat: alamat || null,
+  };
+};

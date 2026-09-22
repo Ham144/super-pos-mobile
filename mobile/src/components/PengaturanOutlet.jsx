@@ -11,8 +11,9 @@ import {
 } from "react-native";
 import React, { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getOuletByUserId, syncronizeOfflineMode } from "../api";
+import { getOuletByUserId } from "../api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+
 import {
   Settings,
   Store,
@@ -24,8 +25,13 @@ import {
   LogOutIcon,
 } from "lucide-react-native";
 import { useOutlet } from "../store";
+import {
+  getOutletId,
+  resetOutletScopedLocalData,
+} from "../utils/reconcileOutletSession";
 import useAccount from "../hooks/useAccount";
 import { useOnlineSync } from "../hooks/useOnlineSync";
+import { syncronizeOfflineMode } from "../api/synchronize";
 
 const PengaturanOutlet = () => {
   const [userInfo, setUserInfo] = useState(null);
@@ -54,9 +60,30 @@ const PengaturanOutlet = () => {
   });
 
   useEffect(() => {
-    if (outletData?.data) {
-      setOutlet(outletData?.data);
-    }
+    if (!outletData?.data) return;
+
+    const syncOutletFromServer = async () => {
+      const next = outletData.data;
+      let prev = null;
+      try {
+        const raw = await AsyncStorage.getItem("outlet");
+        prev = raw ? JSON.parse(raw) : null;
+      } catch {
+        prev = null;
+      }
+
+      const prevId = getOutletId(prev);
+      const nextId = getOutletId(next);
+      const changed = Boolean(prevId && nextId && prevId !== nextId);
+
+      if (changed) {
+        await resetOutletScopedLocalData();
+      }
+
+      await setOutlet(next);
+    };
+
+    syncOutletFromServer();
   }, [outletData?.data]);
 
   // Mutation for synchronizing data

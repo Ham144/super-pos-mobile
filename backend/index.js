@@ -51,6 +51,10 @@ const allowedOrigins = new Set(
     "http://127.0.0.1:5173",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    // Expo web (mobile npm run web)
+    "http://localhost:8081",
+    "http://127.0.0.1:8081",
+    "http://192.168.21.193:8081",
   ].filter(Boolean),
 );
 

@@ -1,7 +1,8 @@
 {
   "expo": {
     "platforms": [
-      "android"
+      "android",
+      "web"
     ],
     "userInterfaceStyle": "light",
     "orientation": "landscape",

@@ -60,6 +60,19 @@ const outletSchema = mongoose.Schema({
   },
   //akun yang punya akses ke outlet ini
   kasirList: [mongoose.Schema.Types.ObjectId],
+  /** Default NAV — diisi seed/.env atau CRUD outlet (bukan fallback runtime dari env). */
+  defaultNoSeries: {
+    type: String,
+    default: "",
+  },
+  defaultSellToCustNo: {
+    type: String,
+    default: "",
+  },
+  defaultSellToCustName: {
+    type: String,
+    default: "",
+  },
   ExternalProductReference: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "ExternalProductReference",

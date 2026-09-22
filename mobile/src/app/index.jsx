@@ -11,7 +11,7 @@ import { applyServerSession } from "../utils/reconcileOutletSession.js";
 
 export default function Index() {
   const [isAuthenticated, setIsAuthenticated] = useState(null);
-  const { data: isOnline } = useOnlineSync();
+  const { data: isOnline, handleSinkronisasi } = useOnlineSync();
 
   useEffect(() => {
     async function checkAndApplyUpdates() {
@@ -58,6 +58,14 @@ export default function Index() {
             }
             const result = await applyServerSession(payload);
             setIsAuthenticated(result.ok);
+            if (result.ok && result.needsResync && handleSinkronisasi) {
+              // Mode offline: katalog harus di-dump ulang untuk outlet baru
+              try {
+                await handleSinkronisasi();
+              } catch (e) {
+                console.warn("Auto sync setelah ganti outlet gagal:", e);
+              }
+            }
           } else {
             const userInfo = await AsyncStorage.getItem("userInfo");
             if (userInfo) {
@@ -105,6 +113,13 @@ export default function Index() {
     }
     const result = await applyServerSession(payload);
     setIsAuthenticated(result.ok);
+    if (result.ok && result.needsResync && handleSinkronisasi) {
+      try {
+        await handleSinkronisasi();
+      } catch (e) {
+        console.warn("Auto sync setelah login/ganti outlet gagal:", e);
+      }
+    }
   };
 
   if (isAuthenticated === null) {

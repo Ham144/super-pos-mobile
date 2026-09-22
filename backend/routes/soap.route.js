@@ -47,6 +47,7 @@ router.put("/outlet/:outletId", async (req, res) => {
       timeoutMs,
       defaults,
       operations,
+      noSeries,
     } = req.body;
 
     if (!endpoint || !usernameNTLM) {
@@ -56,12 +57,19 @@ router.put("/outlet/:outletId", async (req, res) => {
     }
 
     const existing = await Soap.findOne({ outlet: outletId });
+    const resolvedDefaults = {
+      noSeries: defaults?.noSeries || noSeries || "",
+      sellToCustNo: defaults?.sellToCustNo || "",
+      sellToCustName: defaults?.sellToCustName || "",
+    };
+
     const updatePayload = {
       outlet: outletId,
       endpoint,
       usernameNTLM,
       timeoutMs,
-      defaults,
+      noSeries: resolvedDefaults.noSeries,
+      defaults: resolvedDefaults,
       operations,
     };
 

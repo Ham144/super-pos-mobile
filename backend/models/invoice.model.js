@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-// Define Invoice Schema
+// this is bill
 const invoiceSchema = new mongoose.Schema(
   {
     _id: {

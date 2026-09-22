@@ -31,6 +31,7 @@ const authorize = async (req, res, next) => {
     if (!req?.userId) {
       return res.status(403).json({
         message: "Anda Tidak ditemukan di Database, coba login ulang",
+        code: "USER_NOT_FOUND",
       });
     }
 
@@ -40,6 +41,7 @@ const authorize = async (req, res, next) => {
     if (!userDB) {
       return res.status(403).json({
         message: "Anda Tidak ditemukan di Database, coba login ulang",
+        code: "USER_NOT_FOUND",
       });
     }
     req.userDB = userDB;

@@ -86,11 +86,33 @@ const SideDrawer = ({ children }) => {
       }
       queryClient.invalidateQueries({ queryKey: ["userInfo"] });
       queryClient.invalidateQueries();
+      toast.success("Outlet diganti. Pastikan device mobile sync ulang.");
     },
     onError: (error) => {
       toast.error(error?.response?.data?.message || "Failed to switch outlet");
     },
   });
+
+  const requestSwitchOutlet = (outletId) => {
+    if (!outletId || outletId === currentOutletId) return;
+
+    const nextName =
+      outlets.find((o) => o._id === outletId)?.namaOutlet || "outlet baru";
+    const prevName = currentOutletName || "outlet saat ini";
+
+    const confirmed = window.confirm(
+      `Pindah outlet dari "${prevName}" ke "${nextName}"?\n\n` +
+        "Perhatian:\n" +
+        "• Device mobile yang login akun ini mungkin masih punya bill / data belum sync di outlet lama.\n" +
+        "• Setelah pindah, saat mobile online lagi data lokal outlet lama akan dibuang dan diganti katalog outlet baru.\n\n" +
+        "Sarankan kasir sync dulu di mobile sebelum Anda lanjut.\n\n" +
+        "Lanjutkan pindah outlet?",
+    );
+
+    if (confirmed) {
+      handleSwitchCurrentOutlet(outletId);
+    }
+  };
 
   const { mutate: handleLogout } = useMutation({
     mutationKey: ["userInfo"],
@@ -264,7 +286,7 @@ const SideDrawer = ({ children }) => {
                 <Store size={14} className="shrink-0 text-blue-200" />
                 <select
                   value={currentOutletId}
-                  onChange={(e) => handleSwitchCurrentOutlet(e.target.value)}
+                  onChange={(e) => requestSwitchOutlet(e.target.value)}
                   aria-label="Pilih outlet"
                   className="flex-1 min-w-0 bg-blue-900/60 text-white text-xs rounded-lg px-2 py-1.5 border border-blue-600/30 focus:outline-none focus:border-blue-300 truncate cursor-pointer"
                 >
@@ -284,7 +306,7 @@ const SideDrawer = ({ children }) => {
                 />
                 <select
                   value={currentOutletId}
-                  onChange={(e) => handleSwitchCurrentOutlet(e.target.value)}
+                  onChange={(e) => requestSwitchOutlet(e.target.value)}
                   aria-label="Pilih outlet"
                   title={currentOutletName}
                   className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"

@@ -33,7 +33,7 @@ const EMPTY_SOAP = {
   usernameNTLM: "",
   passwordNTLM: "",
   timeoutMs: 30000,
-  defaults: { noSeries: "SO-RTL", sellToCustNo: "" },
+  defaults: { noSeries: "", sellToCustNo: "", sellToCustName: "" },
 };
 
 const EMPTY_AD = {
@@ -105,14 +105,29 @@ export default function ModalOutletEdit({
           passwordNTLM: "",
           timeoutMs: data.timeoutMs || 30000,
           defaults: {
-            noSeries: data.defaults?.noSeries || "SO-RTL",
-            sellToCustNo: data.defaults?.sellToCustNo || "",
+            noSeries:
+              data.defaults?.noSeries || outlet.defaultNoSeries || "",
+            sellToCustNo:
+              data.defaults?.sellToCustNo ||
+              outlet.defaultSellToCustNo ||
+              "",
+            sellToCustName:
+              data.defaults?.sellToCustName ||
+              outlet.defaultSellToCustName ||
+              "",
           },
         });
         setHasExistingSoapPassword(Boolean(data.hasPassword));
       })
       .catch(() => {
-        setSoapForm(EMPTY_SOAP);
+        setSoapForm({
+          ...EMPTY_SOAP,
+          defaults: {
+            noSeries: outlet.defaultNoSeries || "",
+            sellToCustNo: outlet.defaultSellToCustNo || "",
+            sellToCustName: outlet.defaultSellToCustName || "",
+          },
+        });
         setHasExistingSoapPassword(false);
       });
   }, [outlet?._id]);
@@ -266,14 +281,24 @@ export default function ModalOutletEdit({
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const saveRes = await onSave(outlet);
+      const outletPayload = {
+        ...outlet,
+        defaultNoSeries: soapForm.defaults.noSeries || "",
+        defaultSellToCustNo: soapForm.defaults.sellToCustNo || "",
+        defaultSellToCustName: soapForm.defaults.sellToCustName || "",
+      };
+      const saveRes = await onSave(outletPayload);
 
       if (outlet._id && soapForm.endpoint && soapForm.usernameNTLM) {
         await saveSoapConfigByOutlet(outlet._id, {
           endpoint: soapForm.endpoint,
           usernameNTLM: soapForm.usernameNTLM,
           timeoutMs: Number(soapForm.timeoutMs) || 30000,
-          defaults: soapForm.defaults,
+          defaults: {
+            noSeries: soapForm.defaults.noSeries || "",
+            sellToCustNo: soapForm.defaults.sellToCustNo || "",
+            sellToCustName: soapForm.defaults.sellToCustName || "",
+          },
           ...(soapForm.passwordNTLM
             ? { passwordNTLM: soapForm.passwordNTLM }
             : {}),
@@ -732,21 +757,58 @@ export default function ModalOutletEdit({
                         }
                       />
                     </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <input
+                        type="text"
+                        placeholder="No Series (contoh: SO-MG2)"
+                        className="input input-bordered w-full bg-white"
+                        value={soapForm.defaults.noSeries}
+                        onChange={(e) =>
+                          setSoapForm((p) => ({
+                            ...p,
+                            defaults: {
+                              ...p.defaults,
+                              noSeries: e.target.value,
+                            },
+                          }))
+                        }
+                      />
+                      <input
+                        type="text"
+                        placeholder="Sell-to Cust No (NAV)"
+                        className="input input-bordered w-full bg-white"
+                        value={soapForm.defaults.sellToCustNo}
+                        onChange={(e) =>
+                          setSoapForm((p) => ({
+                            ...p,
+                            defaults: {
+                              ...p.defaults,
+                              sellToCustNo: e.target.value,
+                            },
+                          }))
+                        }
+                      />
+                    </div>
                     <input
                       type="text"
-                      placeholder="No Series"
+                      placeholder="Default Customer Name (Sell-to Contact)"
                       className="input input-bordered w-full bg-white"
-                      value={soapForm.defaults.noSeries}
+                      value={soapForm.defaults.sellToCustName}
                       onChange={(e) =>
                         setSoapForm((p) => ({
                           ...p,
                           defaults: {
                             ...p.defaults,
-                            noSeries: e.target.value,
+                            sellToCustName: e.target.value,
                           },
                         }))
                       }
                     />
+                    <p className="text-xs text-purple-700/80">
+                      No Series + Customer No/Name dipakai NAV bila bill tidak
+                      mengisi customer. Nilai dari seed/.env atau diubah di sini
+                      — bukan fallback runtime.
+                    </p>
                   </section>
                 )}
 

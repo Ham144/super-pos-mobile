@@ -24,7 +24,7 @@ const useSpg = () => {
       return list;
     },
   });
-
+  
   const refetchSpgList = async () => {
     await AsyncStorage.removeItem("spg");
     return refetch();

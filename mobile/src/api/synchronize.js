@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ToastAndroid, Platform } from "react-native";
+import axios from "axios";
 import { getBaseUrl, getMobileAuthHeaders } from "../constant";
 import {
   getAllDiskon,
@@ -11,34 +12,98 @@ import {
 import { getAllCustomer } from "./customer.api";
 import { getAllBill } from "./billing.api";
 import { initializePaymentMethod } from "./payment.api";
+import { getAllInventoriesOnlineInitial } from "./product.api";
+import { useOutlet } from "../store";
 
+const notify = (message) => {
+  if (Platform.OS === "android" || Platform.OS === "web") {
+    ToastAndroid?.show(message, ToastAndroid.SHORT);
+  } else {
+    console.log(message);
+  }
+};
+
+const resolveErrorMessage = (error) => {
+  const data = error?.response?.data;
+  if (typeof data === "string" && data.trim()) return data;
+  if (data?.message) return data.message;
+  if (data?.error) {
+    return typeof data.error === "string" ? data.error : data.error?.message;
+  }
+  return error?.message || "Terjadi kesalahan sinkronisasi";
+};
+
+/** Dump inventory pages ke AsyncStorage (mode offline saja). */
+const dumpInventoriesFromServer = async ({ pageSize = 50 } = {}) => {
+  notify("Memulai sinkronisasi inventories...");
+  await AsyncStorage.setItem("inventories", JSON.stringify([]));
+
+  let page = 1;
+  let totalItems = 0;
+
+  while (true) {
+    const inventoriesPage = await getAllInventoriesOnlineInitial(page, pageSize);
+    const rows = Array.isArray(inventoriesPage?.data)
+      ? inventoriesPage.data
+      : [];
+
+    if (!rows.length) break;
+
+    const batch = rows
+      .filter((item) => item?.isDisabled !== true)
+      .map((item) => ({
+        ...item,
+        quantityDariDataBase: item?.quantity,
+        terakhirSync: new Date(),
+        terjualFromApp: 0,
+      }));
+
+    if (batch.length) {
+      await saveToAsyncStorage("inventories", batch);
+      totalItems += batch.length;
+    }
+
+    if (rows.length < pageSize) break;
+    page += 1;
+  }
+
+  const finalInventories =
+    JSON.parse(await AsyncStorage.getItem("inventories")) || [];
+
+  if (!finalInventories.length) {
+    throw new Error("Tidak ditemukan data inventories dari Database");
+  }
+
+  notify(`Sinkronisasi selesai: ${totalItems} item`);
+  return finalInventories;
+};
 
 // Simpan ke AsyncStorage dengan cara bertahap
 const saveToAsyncStorage = async (key, newData) => {
-    const CHUNK_SIZE = 500; // Batasi ukuran batch
-    let existingData = JSON.parse(await AsyncStorage.getItem(key)) || [];
-  
-    // Create a map of existing items by _id to prevent duplicates
-    const existingMap = new Map(existingData.map((item) => [item._id, item]));
-  
-    for (let i = 0; i < newData.length; i += CHUNK_SIZE) {
-      const chunk = newData.slice(i, i + CHUNK_SIZE);
-  
-      // Process each item in the chunk
-      chunk.forEach((item) => {
-        if (!existingMap.has(item._id)) {
-          existingMap.set(item._id, item);
-        }
-      });
-  
-      // Convert map back to array and save
-      const updatedData = Array.from(existingMap.values());
-      await AsyncStorage.setItem(key, JSON.stringify(updatedData));
-  
-      // Beri jeda kecil agar UI tetap responsif
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-  };
+  const CHUNK_SIZE = 500; // Batasi ukuran batch
+  let existingData = JSON.parse(await AsyncStorage.getItem(key)) || [];
+
+  // Create a map of existing items by _id to prevent duplicates
+  const existingMap = new Map(existingData.map((item) => [item._id, item]));
+
+  for (let i = 0; i < newData.length; i += CHUNK_SIZE) {
+    const chunk = newData.slice(i, i + CHUNK_SIZE);
+
+    // Process each item in the chunk
+    chunk.forEach((item) => {
+      if (!existingMap.has(item._id)) {
+        existingMap.set(item._id, item);
+      }
+    });
+
+    // Convert map back to array and save
+    const updatedData = Array.from(existingMap.values());
+    await AsyncStorage.setItem(key, JSON.stringify(updatedData));
+
+    // Beri jeda kecil agar UI tetap responsif
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+};
   
   //sinkronisasi sync dump utama outlet.mode == mode
   export const syncronizeOfflineMode = async (isOnline) => {
@@ -86,7 +151,6 @@ const saveToAsyncStorage = async (key, newData) => {
       if (outletRes?.data) {
         updatedOutlet = outletRes.data;
         await AsyncStorage.setItem("outlet", JSON.stringify(updatedOutlet));
-        const { useOutlet } = await import("./store");
         await useOutlet.getState().setOutlet(updatedOutlet);
       }
     } catch (error) {
@@ -381,127 +445,20 @@ const saveToAsyncStorage = async (key, newData) => {
         await AsyncStorage.setItem("inventories", JSON.stringify([]));
         data.newInventoryData = [];
       } else if (!inventoriesOffline?.length || !inventoriesOffline) {
-        let currentPage = 1;
-        let hasMorePages = true;
-        const ITEMS_PER_PAGE = 50;
-        let totalItems = 0;
-  
         try {
-          // Implementasi pagination untuk mengambil data inventories
-          if (Platform.OS === "android") {
-            ToastAndroid.show(
-              "Memulai sinkronisasi inventories...",
-              ToastAndroid.SHORT,
-            );
-          } else if (Platform.OS === "web") {
-            ToastAndroid?.show(
-              "Memulai sinkronisasi inventories...",
-              ToastAndroid.SHORT,
-            );
-        }
-  
-          // Inisialisasi array kosong di AsyncStorage
-          await AsyncStorage.setItem("inventories", JSON.stringify([]));
-  
-          while (hasMorePages) {
-            const inventoriesPage = await getAllInventoriesOnlineInitial(
-              currentPage,
-              ITEMS_PER_PAGE,
-            );
-  
-            if (!inventoriesPage?.data || inventoriesPage.data.length === 0) {
-              hasMorePages = false;
-              break;
-            }
-  
-            const currentBatchData = inventoriesPage.data
-              .filter((item) => item?.isDisabled !== true)
-              .map((item) => ({
-                ...item,
-                quantityDariDataBase: item?.quantity,
-                terakhirSync: new Date(),
-                terjualFromApp: 0,
-              }));
-  
-            await saveToAsyncStorage("inventories", currentBatchData);
-  
-            totalItems += currentBatchData.length;
-  
-            if (inventoriesPage.data.length < ITEMS_PER_PAGE) {
-              hasMorePages = false;
-            } else {
-              currentPage++;
-            }
-          }
-          // Setelah selesai, ambil semua data untuk dikembalikan
-          const finalInventories = JSON.parse(
-            await AsyncStorage.getItem("inventories"),
-          );
-  
-          if (finalInventories?.length > 0) {
-            data.newInventoryData = finalInventories;
-  
-            if (Platform.OS === "android") {
-              ToastAndroid.show(
-                `Sinkronisasi selesai: ${totalItems} item`,
-                ToastAndroid.SHORT,
-              );
-            } else if (Platform.OS === "web") {
-              ToastAndroid?.show(
-                `Sinkronisasi selesai: ${totalItems} item`,
-                ToastAndroid.SHORT,
-              );
-            }
-          } else {
-            if (Platform.OS === "web") {
-              ToastAndroid?.show(
-                "Tidak ditemukan data inventories dari Database",
-                ToastAndroid.SHORT,
-              );
-            } else {
-              ToastAndroid?.show(
-                "Tidak ditemukan data inventories dari Database",
-                ToastAndroid.SHORT,
-              );
-            }
-            return;
-          }
-        } catch (res) {
-          Platform.OS === "web"
-            ? ToastAndroid?.show(
-                res?.response?.data?.message ||
-                  "gagal inisialisasi inventories offline",
-                ToastAndroid.SHORT,
-              )
-            : ToastAndroid?.show(
-                res?.response?.data?.message ||
-                  "gagal inisialisasi inventories offline",
-                ToastAndroid.SHORT,
-              );
-          if (res?.status == 401) {
-            ToastAndroid?.show(
-              "Token expired, logout redirect",
-              ToastAndroid.SHORT,
-            );
-            setTimeout(async () => {
-              await AsyncStorage.removeItem("userInfo");
-              await AsyncStorage.removeItem("outlet");
-              await AsyncStorage.removeItem("token");
-  
-              // Navigate to login screen
-              if (Platform.OS === "web") {
-                window.location.href = "/";
-              } else {
-                // Using Expo Router
-                const { router } = require("expo-router");
-                router.replace("/");
-              }
-            }, 2000);
-          }
-          return;
+          data.newInventoryData = await dumpInventoriesFromServer({
+            pageSize: 50,
+          });
+        } catch (error) {
+          const message = resolveErrorMessage(error);
+          // Biarkan bubble ke useOnlineSync supaya Alert menampilkan error asli
+          const wrapped = new Error(message);
+          wrapped.cause = error;
+          wrapped.response = error?.response;
+          throw wrapped;
         }
       }
-  
+
       //kembalikan data ke useOnlineSync
       return data;
     }

@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Alert, Platform, ToastAndroid } from "react-native";
-import { useInventoriesOffline, useOutlet } from "../store";
+import { useCurrentBill, useInventoriesOffline, useOutlet } from "../store";
 
 export const getOutletId = (outlet) => {
   if (!outlet) return "";
@@ -10,6 +10,62 @@ export const getOutletId = (outlet) => {
   return String(outlet);
 };
 
+/**
+ * Bill lokal: _id = `${kodeOutlet}-${user}-${timestamp}`, kodeInvoice diawali kodeOutlet.
+ * Pakai prefix `_id` + `-` agar kode pendek tidak nabrak (PR vs PRJ_JKT).
+ */
+export const billBelongsToOutlet = (bill, kodeOutlet) => {
+  if (!bill || !kodeOutlet) return false;
+  const kode = String(kodeOutlet);
+  const id = String(bill._id || "");
+  if (id.startsWith(`${kode}-`)) return true;
+  if (bill.kodeOutlet === kode || bill.outlet?.kodeOutlet === kode) return true;
+  return false;
+};
+
+export const filterBillsForOutlet = (bills, kodeOutlet) => {
+  if (!Array.isArray(bills)) return [];
+  if (!kodeOutlet) return bills;
+  return bills.filter((bill) => billBelongsToOutlet(bill, kodeOutlet));
+};
+
+/** Buang bill outlet lain dari AsyncStorage (sisa soft-reset / merge sync). */
+export const purgeForeignOutletBills = async (kodeOutlet) => {
+  if (!kodeOutlet) return [];
+  try {
+    const raw = await AsyncStorage.getItem("bills");
+    if (!raw) return [];
+    const all = JSON.parse(raw);
+    if (!Array.isArray(all)) return [];
+    const scoped = filterBillsForOutlet(all, kodeOutlet);
+    if (scoped.length !== all.length) {
+      await AsyncStorage.setItem("bills", JSON.stringify(scoped));
+    }
+    return scoped;
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Data yang terikat ke satu outlet. Harus dibuang saat currentOutlet ganti.
+ * Jangan logout — cukup flush + rehydrate (sync / live fetch).
+ */
+export const OUTLET_SCOPED_STORAGE_KEYS = [
+  "inventories",
+  "favoritedInventorySkus",
+  "removedInventorySkus",
+  "lastInventoryUpdate",
+  "lastSyncTime",
+  "bills",
+  "spg",
+  "paymentMethod",
+  "diskon",
+  "promo",
+  "voucher",
+  "kirimNantiKwitansi",
+];
+
 const notify = (title, message) => {
   if (Platform.OS === "android") {
     ToastAndroid.show(message, ToastAndroid.LONG);
@@ -18,12 +74,31 @@ const notify = (title, message) => {
   }
 };
 
+/** Hapus cache lokal yang bergantung outlet + bersihkan cart aktif. */
+export const resetOutletScopedLocalData = async () => {
+  await AsyncStorage.multiRemove(OUTLET_SCOPED_STORAGE_KEYS);
+  try {
+    useInventoriesOffline.getState().setInventoriesOffline([]);
+  } catch (_) {
+    /* store belum siap */
+  }
+  try {
+    useCurrentBill.getState().clearSale?.();
+  } catch (_) {
+    /* store belum siap */
+  }
+};
+
 /**
- * Reconcile mobile session with server getUserInfo payload.
- * Always overwrite AsyncStorage/zustand outlet from DB currentOutlet.
+ * Reconcile mobile session dengan payload getUserInfo / login.
  *
- * offline  → may dump inventory; clear + ask sync on change
- * stateless → live fetch only; never call sync-offline-mode dump
+ * Design:
+ * - Ganti outlet → soft reset (bukan logout) + needsResync
+ * - Offline tanpa server → pakai outlet lokal apa adanya
+ * - Akses dicabut / tanpa outlet → caller yang logout
+ *
+ * offline mode  → setelah reset, sync dump katalog
+ * stateless     → setelah reset, LibrariesScreen live-fetch
  */
 export const applyServerSession = async (payload) => {
   if (!payload) {
@@ -81,20 +156,8 @@ export const applyServerSession = async (payload) => {
       ? { ...serverOutlet }
       : { _id: serverOutlet };
 
-  // Always write server outlet (fixes stale AsyncStorage / sync overwrite)
   if (outletChanged) {
-    await AsyncStorage.multiRemove([
-      "inventories",
-      "favoritedInventorySkus",
-      "removedInventorySkus",
-      "lastInventoryUpdate",
-    ]);
-    await useInventoriesOffline.getState().setInventoriesOffline([]);
-
-    // Force next offline sync path to re-init for offline mode only
-    if (mode === "offline") {
-      await AsyncStorage.removeItem("lastSyncTime");
-    }
+    await resetOutletScopedLocalData();
   }
 
   await AsyncStorage.setItem("outlet", JSON.stringify(outletToStore));
@@ -105,13 +168,13 @@ export const applyServerSession = async (payload) => {
       outletToStore.namaOutlet || outletToStore.kodeOutlet || serverId;
     if (mode === "stateless") {
       notify(
-        "Outlet diperbarui",
-        `Sesi outlet diganti ke "${label}" (stateless). Katalog live dari server.`,
+        "Outlet diganti",
+        `Sekarang: "${label}" (stateless). Data outlet lama dibuang — katalog diambil live.`,
       );
     } else {
       notify(
-        "Outlet diperbarui",
-        `Sesi outlet diganti ke "${label}" (offline). Katalog lokal direset — sync ulang.`,
+        "Outlet diganti",
+        `Sekarang: "${label}" (offline). Data outlet lama dibuang — sync ulang katalog.`,
       );
     }
   }
@@ -119,6 +182,7 @@ export const applyServerSession = async (payload) => {
   return {
     ok: true,
     changed: outletChanged,
+    needsResync: outletChanged && mode === "offline",
     userInfo: normalizedUser,
     outlet: outletToStore,
     mode,
@@ -133,4 +197,36 @@ export const getLocalOutletMode = async () => {
   } catch {
     return null;
   }
+};
+
+/**
+ * Default customer NAV dari outlet (seed/CRUD).
+ * Baca zustand dulu, lalu AsyncStorage (sering lebih lengkap setelah sync).
+ */
+export const getOutletDefaultCustomer = async () => {
+  let fromStore = null;
+  try {
+    fromStore = useOutlet.getState()?.outlet || null;
+  } catch {
+    fromStore = null;
+  }
+
+  let fromStorage = null;
+  try {
+    const raw = await AsyncStorage.getItem("outlet");
+    fromStorage = raw ? JSON.parse(raw) : null;
+  } catch {
+    fromStorage = null;
+  }
+
+  const name =
+    fromStore?.defaultSellToCustName ||
+    fromStorage?.defaultSellToCustName ||
+    "";
+  const no =
+    fromStore?.defaultSellToCustNo ||
+    fromStorage?.defaultSellToCustNo ||
+    "";
+
+  return { name, no, outlet: fromStore || fromStorage };
 };

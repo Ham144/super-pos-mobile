@@ -11,17 +11,53 @@ const upsertInvoiceDoc = async (payload) => {
     throw new Error("_id invoice wajib");
   }
 
-  return Invoice.findByIdAndUpdate(
-    _id,
-    { $set: { ...rest, _id } },
-    { new: true, upsert: true, setDefaultsOnInsert: true },
-  ).lean();
+  const attemptUpsert = async (kodeInvoice) =>
+    Invoice.findByIdAndUpdate(
+      _id,
+      { $set: { ...rest, _id, ...(kodeInvoice ? { kodeInvoice } : {}) } },
+      { new: true, upsert: true, setDefaultsOnInsert: true },
+    ).lean();
+
+  try {
+    return await attemptUpsert(rest.kodeInvoice);
+  } catch (error) {
+    // E11000: kodeInvoice bentrok dengan dokumen lain (format lama outlet+kasir+YYMM)
+    if (error?.code !== 11000 || !rest.kodeInvoice) {
+      throw error;
+    }
+
+    const conflict = await Invoice.findOne({
+      kodeInvoice: rest.kodeInvoice,
+    })
+      .select("_id")
+      .lean();
+
+    // Bill ini sudah ada dengan _id sama — retry update tanpa upsert race
+    if (conflict && String(conflict._id) === String(_id)) {
+      return Invoice.findByIdAndUpdate(
+        _id,
+        { $set: { ...rest, _id } },
+        { new: true },
+      ).lean();
+    }
+
+    // Pakai kode unik baru agar cetak/ship tetap jalan
+    const uniqueKode = `${rest.kodeInvoice}${String(Date.now()).slice(-6)}`;
+    console.warn(
+      `kodeInvoice duplikat (${rest.kodeInvoice}) → ${uniqueKode}`,
+    );
+    return attemptUpsert(uniqueKode);
+  }
 };
 
 export const buildDefaultStatelessBillService = () =>
   createStatelessBillService({
     findOutlet: (outletId) =>
-      Outlet.findById(outletId).select("mode kodeOutlet namaOutlet").lean(),
+      Outlet.findById(outletId)
+        .select(
+          "mode kodeOutlet namaOutlet defaultNoSeries defaultSellToCustNo defaultSellToCustName",
+        )
+        .lean(),
     findSoapConfig: (outletId) => Soap.findOne({ outlet: outletId }).lean(),
     findInventoriesBySkus: (outletId, skus) =>
       InventoryRefrensi.find({
@@ -43,11 +79,20 @@ const resolveOutletId = (req) =>
 
 export const cetakBillStateless = async (req, res) => {
   try {
+    console.log("req.body:", req.body);
     const outletId = resolveOutletId(req);
     const bill = req.body?.bill || req.body;
     const result = await getService(req).cetakBill({ outletId, bill });
+    console.log("result:", result);
     return res.status(200).json({ message: result.message, ...result });
   } catch (error) {
+    console.error("cetakBillStateless gagal:", error?.message || error);
+    if (error?.code === 11000) {
+      return res.status(409).json({
+        message:
+          "kodeInvoice bentrok dengan bill lain. Clear sale lalu buat bill baru, lalu cetak lagi.",
+      });
+    }
     return res.status(error.statusCode || 500).json({
       message: error.message,
     });

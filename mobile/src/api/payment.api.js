@@ -3,14 +3,14 @@ import { getBaseUrl, getMobileAuthHeaders } from "../constant";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 
-export const createMidtransPayment = async (invoiceId) => {
-    const response = await axios.post(
-      `${await getBaseUrl()}/api/v1/payment/midtrans/transaction`,
-      { invoiceId },
-      { headers: await getMobileAuthHeaders(), timeout: 30000 },
-    );
-    return response.data?.data;
-  };
+export const createMidtransPayment = async (invoiceId, bill = null) => {
+  const response = await axios.post(
+    `${await getBaseUrl()}/api/v1/payment/midtrans/transaction`,
+    { invoiceId, ...(bill ? { bill } : {}) },
+    { headers: await getMobileAuthHeaders(), timeout: 30000 },
+  );
+  return response.data?.data;
+};
 
 
 export const getMidtransPaymentStatus = async (invoiceId) => {

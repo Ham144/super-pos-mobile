@@ -15,6 +15,16 @@ const escapeXml = (value) => {
     .replace(/'/g, "&apos;");
 };
 
+/** NAV Code[20] — DocumentNo / ExtDoc tidak boleh > 20. */
+export const toNavDocumentNo = (value, maxLen = 20) => {
+  const raw = String(value || "");
+  if (!raw) return "";
+  if (raw.length <= maxLen) return raw;
+  const compact = raw.replace(/[^a-zA-Z0-9]/g, "");
+  if (compact.length <= maxLen) return compact;
+  return compact.slice(-maxLen);
+};
+
 const wrapEnvelope = (bodyContent) =>
   `<Envelope xmlns="http://schemas.xmlsoap.org/soap/envelope/"><Body>${bodyContent}</Body></Envelope>`;
 
@@ -170,6 +180,13 @@ export const buildSoapXml = (operationKey, payload = {}) => {
   }
 };
 
+/**
+ * Map invoice POS → payload SalesOrderAutoPostingShip.
+ *
+ * Wajib: DocumentNo, SellToCustNo, NoSeries, ExtDoc + line ItemNo/Qty/UnitPrice/LineNo
+ * Opsional (diisi bila ada): OrderDate, LocationCode, SalespersonCode, SellToContact,
+ *   LineDiscountAmount, Catatan; sisanya boleh kosong.
+ */
 export const mapInvoiceToSalesOrderPayload = (
   invoice,
   defaults = {},
@@ -180,34 +197,57 @@ export const mapInvoiceToSalesOrderPayload = (
     "sellToCustNo",
   );
   const noSeries = requireSoapDefault(defaults.noSeries, "noSeries");
-  const resolvedLocationCode = requireSoapDefault(
-    locationCode,
-    "kodeOutlet",
-  );
+  const resolvedLocationCode = String(locationCode || "").trim();
 
-  const documentNo = invoice.documentNo || invoice._id;
+  const documentNo = toNavDocumentNo(
+    invoice.documentNo || invoice.navDocumentNo || invoice._id,
+  );
   const lineStep = 1000;
+
+  const toNum = (v) => {
+    if (v == null || v === "") return 0;
+    if (typeof v === "object" && v.$numberDecimal != null) {
+      return Number(v.$numberDecimal);
+    }
+    return Number(v);
+  };
 
   const lines = (invoice.currentBill || []).map((item, index) => {
     const relatedDiskon = (invoice.diskon || []).find(
-      (diskon) => diskon.sku === item.sku || diskon.description === item.description,
+      (diskon) =>
+        diskon.sku === item.sku || diskon.description === item.description,
     );
+    const rpPotongan = relatedDiskon?.diskonInfo?.RpPotonganHarga;
+    const lineDiscountAmount =
+      rpPotongan != null && rpPotongan !== "" && toNum(rpPotongan) !== 0
+        ? toNum(rpPotongan)
+        : "";
+
+    const qty = toNum(item.quantity) || 0;
+    const unitPrice =
+      toNum(item.RpHargaDasar) ||
+      (qty ? toNum(item.totalRp) / qty : toNum(item.totalRp));
 
     return {
       documentNo,
       lineNo: (index + 1) * lineStep,
-      itemNo: item.sku,
-      qty: item.quantity,
-      unitPrice: item.RpHargaDasar ?? item.totalRp / (item.quantity || 1),
-      lineDiscountAmount:
-        relatedDiskon?.diskonInfo?.RpPotonganHarga ??
-        relatedDiskon?.diskonInfo?.percentPotonganHarga ??
-        "",
+      itemNo: String(item.sku || "").trim(),
+      qty,
+      unitPrice,
+      lineDiscountAmount,
       promoCode: "",
       uom: "",
       catatan: item.catatan || "",
     };
   });
+
+  const salespersonRaw =
+    typeof invoice.spg === "object"
+      ? invoice.spg?.name || invoice.spg?.kode || invoice.salesPerson
+      : invoice.spg || invoice.salesPerson || "";
+
+  const sellToContact =
+    invoice.customer?.name || defaults.sellToCustName || "";
 
   return {
     header: {
@@ -220,10 +260,10 @@ export const mapInvoiceToSalesOrderPayload = (
       locationCode: resolvedLocationCode,
       dim1: "",
       customerPriceGrp: "",
-      salespersonCode: invoice.spg || invoice.salesPerson || "",
-      sellToContact: invoice.customer?.name || "",
+      salespersonCode: toNavDocumentNo(salespersonRaw),
+      sellToContact,
       noSeries,
-      extDoc: invoice.kodeInvoice || invoice._id,
+      extDoc: toNavDocumentNo(invoice.kodeInvoice || invoice._id),
     },
     lines,
   };

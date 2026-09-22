@@ -11,6 +11,7 @@ import { useCurrentBill } from "../store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { initializePaymentMethod } from "../api";
 import useSpg from "../hooks/useSpg";
+import { useOnlineSync } from "../hooks/useOnlineSync";
 
 const DetailModal = ({ visible, setModalVisible, handleCetakBill }) => {
   const {
@@ -25,7 +26,7 @@ const DetailModal = ({ visible, setModalVisible, handleCetakBill }) => {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null);
   const [selectedSpg, setSelectedSpg] = useState(null);
   const [selectedMode, setSelectedMode] = useState("fallback");
-
+  const { isOnline } = useOnlineSync();
   
 
   const midtransMethods = useMemo(
@@ -85,7 +86,7 @@ const DetailModal = ({ visible, setModalVisible, handleCetakBill }) => {
     };
     fetchPaymentMethods();
   }, [visible]);
-
+  
   const { spgList = [], refetchSpgList } = useSpg();
 
   useEffect(() => {
@@ -324,12 +325,16 @@ const DetailModal = ({ visible, setModalVisible, handleCetakBill }) => {
                 </Text>
                 <View className="flex-row gap-2">
                   <TouchableOpacity
-                    className={`flex-1 rounded-xl border px-3 py-3 ${
+                    className={`flex-1 rounded-xl border px-3 py-3 ${!isOnline ? "bg-gray-400" : ""} ${
                       selectedMode === "midtrans"
                         ? "border-blue-600 bg-blue-50"
                         : "border-gray-200 bg-white"
                     }`}
+                    disabled={!isOnline}
                     onPress={() => {
+                      if (!isOnline) {
+                        return;
+                      }
                       setSelectedMode("midtrans");
                       if (midtransMethods.length && selectedPaymentMethod?.gatewayProvider !== "midtrans") {
                         setSelectedPaymentMethod(midtransMethods[0]);

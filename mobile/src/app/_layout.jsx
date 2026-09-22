@@ -4,8 +4,28 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useFonts } from "expo-font";
 import { ActivityIndicator, Image, Text, View } from "react-native";
 import { StyleSheet } from "react-native";
+import { installAxiosAuthGuard } from "../api/sessionAuth";
 
-const queryClient = new QueryClient();
+installAxiosAuthGuard();
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: (failureCount, error) => {
+        const status = error?.response?.status;
+        const code = error?.response?.data?.code;
+        if (
+          status === 401 ||
+          status === 403 ||
+          code === "USER_NOT_FOUND"
+        ) {
+          return false;
+        }
+        return failureCount < 2;
+      },
+    },
+  },
+});
 const logo = require("@/assets/internal-pos.png");
 
 export default function Layout() {

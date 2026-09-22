@@ -9,10 +9,109 @@ import {
   getMidtransPaymentStatus,
   cetakBillStateless,
   bayarStateless,
+  getOuletByUserId,
 } from "../api";
 import excactTimeString from "../utils/excactTimeString";
-import { useLoading, useOutlet, useSyncSetting } from "../store";
+import { useLoading, useOutlet, useSyncSetting, useCurrentBill } from "../store";
 import { useOnlineSync } from "./useOnlineSync";
+import { MODE_OUTLET, resolveBillCustomer } from "../constant";
+import {
+  billBelongsToOutlet,
+  getOutletDefaultCustomer,
+} from "../utils/reconcileOutletSession";
+
+/** Pastikan customer bill pakai defaultSellToCustName outlet (seed/CRUD), bukan kosong. */
+const resolveCustomerWithOutletDefault = async ({
+  name,
+  phone,
+  alamat,
+}) => {
+  let defaults = await getOutletDefaultCustomer();
+
+  // Cache outlet lokal sering belum punya field baru — refresh dari server
+  if (!defaults.name) {
+    try {
+      const userRaw = await AsyncStorage.getItem("userInfo");
+      const userInfo = userRaw ? JSON.parse(userRaw) : null;
+      if (userInfo?._id) {
+        const res = await getOuletByUserId(userInfo._id);
+        const fresh = res?.data;
+        if (fresh) {
+          await useOutlet.getState().setOutlet(fresh);
+          defaults = {
+            name: fresh.defaultSellToCustName || "",
+            no: fresh.defaultSellToCustNo || "",
+            outlet: fresh,
+          };
+        }
+      }
+    } catch (e) {
+      console.warn("Gagal refresh outlet untuk default customer:", e?.message);
+    }
+  }
+
+  return resolveBillCustomer(
+    { name, phone, alamat },
+    { defaultName: defaults.name },
+  );
+};
+
+/** Jika cart masih pakai _id/kodeInvoice outlet lama, buat ulang identitas sesuai outlet aktif. */
+const rekeyBillIdentityIfNeeded = async (outlet) => {
+  const kodeOutlet = outlet?.kodeOutlet;
+  const state = useCurrentBill.getState();
+  if (!kodeOutlet || !state._id) {
+    return { _id: state._id, kodeInvoice: state.kodeInvoice };
+  }
+  if (
+    billBelongsToOutlet(
+      { _id: state._id, kodeInvoice: state.kodeInvoice },
+      kodeOutlet,
+    )
+  ) {
+    return { _id: state._id, kodeInvoice: state.kodeInvoice };
+  }
+
+  let kodeKasir = "";
+  let salesPerson = state.salesPerson || "";
+  try {
+    const userRaw = await AsyncStorage.getItem("userInfo");
+    const userInfo = userRaw ? JSON.parse(userRaw) : null;
+    kodeKasir = userInfo?.kodeKasir || "";
+    salesPerson = salesPerson || userInfo?.username || "";
+  } catch {
+    /* ignore */
+  }
+
+  if (!kodeKasir || !salesPerson) {
+    return { _id: state._id, kodeInvoice: state.kodeInvoice };
+  }
+
+  const now = new Date();
+  const timestamp =
+    String(now.getFullYear()).slice(-2) +
+    String(now.getMonth() + 1).padStart(2, "0") +
+    String(now.getDate()).padStart(2, "0") +
+    String(now.getHours()).padStart(2, "0") +
+    String(now.getMinutes()).padStart(2, "0") +
+    String(now.getSeconds()).padStart(2, "0");
+
+  const nextId = `${kodeOutlet}-${salesPerson}-${timestamp}`;
+  const nextKodeInvoice = `${kodeOutlet}${kodeKasir}${timestamp}`;
+
+  useCurrentBill.setState({
+    _id: nextId,
+    kodeInvoice: nextKodeInvoice,
+    salesPerson,
+  });
+
+  ToastAndroid?.show(
+    "Bill disesuaikan ke outlet aktif",
+    ToastAndroid.SHORT,
+  );
+
+  return { _id: nextId, kodeInvoice: nextKodeInvoice };
+};
 
 export const useBillOperations = ({
   _id,
@@ -27,7 +126,6 @@ export const useBillOperations = ({
   customerEmail,
   customerName,
   customerPhone,
-  customerJenisKel,
   customerAddress,
   paymentMethod,
   isPrintedCustomerBilling,
@@ -190,6 +288,31 @@ export const useBillOperations = ({
     );
   };
 
+  /** Tandai lunas di zustand + AsyncStorage — tidak menunggu sukses cetak kwitansi. */
+  const markBillAsPaidLocally = async ({
+    paymentReference,
+    paidAt,
+  } = {}) => {
+    const ref =
+      paymentReference || nomorTransaksi || _id;
+    const bayarAt = paidAt || new Date().toISOString();
+
+    setDone(true);
+    if (typeof setNomorTransaksi === "function") {
+      setNomorTransaksi(ref);
+    }
+
+    await handleSimpanBillOffline({
+      isPrintedCustomerBilling: true,
+      isPrintedKwitansi: Boolean(isPrintedKwitansi),
+      done: true,
+      tanggalBayar: bayarAt,
+      nomorTransaksi: ref,
+    });
+
+    return { ref, bayarAt };
+  };
+
   const completeMidtransPayment = async ({ settlement, sourceUrl } = {}) => {
     if (midtransFlowHandledRef.current) return;
 
@@ -205,15 +328,38 @@ export const useBillOperations = ({
       settlement?.transactionId ||
       _id;
 
+    const paidAt =
+      settlement?.settlementTime ||
+      settlement?.transactionTime ||
+      new Date().toISOString();
+
     setShowPaymentModal(false);
     setPaymentUrl(null);
 
     try {
-      await handleCetaKuitansi_offlineBayar({ paymentReference });
+      // Backend sudah done=true via webhook/status — sync lokal dulu
+      // supaya pencil mati & Cetak Helper aktif meski printer gagal.
+      await markBillAsPaidLocally({ paymentReference, paidAt });
+
+      ToastAndroid?.show("Pembayaran berhasil — bill lunas", ToastAndroid.SHORT);
+
+      // Cetak kwitansi (opsional untuk UX); gagal print tidak undo lunas
+      try {
+        await handleCetaKuitansi_offlineBayar({ paymentReference });
+      } catch (printError) {
+        console.warn(
+          "Kwitansi gagal dicetak setelah Midtrans lunas:",
+          printError?.message || printError,
+        );
+        ToastAndroid?.show(
+          "Bill sudah lunas. Cetak ulang kwitansi jika printer siap.",
+          ToastAndroid.LONG,
+        );
+      }
     } catch (error) {
       Alert.alert(
         "Pembayaran Midtrans",
-        error?.message || "Gagal memproses pembayaran Midtrans",
+        error?.message || "Gagal menandai bill lunas di perangkat",
       );
     } finally {
       midtransFlowHandledRef.current = false;
@@ -328,19 +474,67 @@ export const useBillOperations = ({
         clearInterval(midtransPollTimerRef.current);
         midtransPollTimerRef.current = null;
       }
-      const syncResult = await handleSinkronisasi();
-      if (!syncResult)
-        throw new Error("Bill belum berhasil disinkronkan ke server");
 
-      const transaction = await createMidtransPayment(_id);
+      // Snapshot bill lokal — Midtrans butuh row Invoice di Mongo (webhook/status).
+      // Offline: sync dump boleh gagal/terlewat; kirim snapshot supaya BE bisa upsert.
+      // Stateless: jangan sync dump; invoice biasanya sudah dari cetak-bill, snapshot tetap safety net.
+      const billSnapshot = {
+        _id,
+        kodeInvoice,
+        currentBill,
+        diskon,
+        promo,
+        futureVoucher,
+        implementedVoucher,
+        subTotal: cebelumDiskon,
+        total: setelahDiskon,
+        salesPerson,
+        spg,
+        customer: await resolveCustomerWithOutletDefault({
+          name: customerName,
+          phone: customerPhone,
+          alamat: customerAddress,
+        }),
+        paymentMethod,
+        isPrintedCustomerBilling: true,
+        isPrintedKwitansi: Boolean(isPrintedKwitansi),
+        done: Boolean(done),
+      };
+
+      if (outlet?.mode !== MODE_OUTLET.stateless) {
+        const syncResult = await handleSinkronisasi();
+        if (!syncResult) {
+          console.warn(
+            "Sync dump gagal/dilewati — lanjut Midtrans dengan upsert snapshot bill",
+          );
+        }
+      }
+
+      const transaction = await createMidtransPayment(_id, billSnapshot);
       if (!transaction?.redirectUrl)
         throw new Error("URL pembayaran Midtrans tidak tersedia");
 
-      // Buka di modal internal aplikasi, bukan Linking.openURL
       setPaymentUrl(transaction.redirectUrl);
       setShowPaymentModal(true);
     } catch (error) {
-      Alert.alert("Error", error?.message || "Gagal memulai pembayaran");
+      const message =
+        error?.response?.data?.message ||
+        error?.message ||
+        "Gagal memulai pembayaran";
+
+      // BE sudah menandai lunas (webhook) tapi lokal belum — sync state, jangan stuck
+      if (/bill telah selesai/i.test(message)) {
+        await markBillAsPaidLocally({
+          paymentReference: nomorTransaksi || _id,
+        });
+        ToastAndroid?.show(
+          "Bill sudah lunas di server — status lokal diperbarui",
+          ToastAndroid.LONG,
+        );
+        return;
+      }
+
+      Alert.alert("Error", message);
     } finally {
       setLoadingPrinting(false);
     }
@@ -409,35 +603,27 @@ export const useBillOperations = ({
             .filter((catatan) => catatan.catatan)
         : [];
 
-      // Siapkan data bill yang akan disimpan
-      const hasCustomerData = Boolean(
-        customerName ||
-        customerEmail ||
-        customerPhone ||
-        customerJenisKel ||
-        customerAddress,
-      );
+      // Siapkan data bill yang akan disimpan — baca _id/kodeInvoice terbaru (bisa di-rekey ke outlet aktif)
+      const liveBill = useCurrentBill.getState();
+      const billId = liveBill._id || _id;
+      const billKode = liveBill.kodeInvoice || kodeInvoice;
 
       const billDetail = {
-        _id,
-        kodeInvoice,
+        _id: billId,
+        kodeInvoice: billKode,
         currentBill,
         isPrintedCustomerBilling: isPrintedCustomerBilling,
         isPrintedKwitansi: isPrintedKwitansi,
-        salesPerson,
+        salesPerson: liveBill.salesPerson || salesPerson,
         spg: spg,
         diskon,
         promo,
         futureVoucher,
-        customer: hasCustomerData
-          ? {
-              name: customerName || "",
-              email: customerEmail || "",
-              phone: customerPhone || "",
-              jenisKelamin: customerJenisKel || "",
-              alamat: customerAddress || "",
-            }
-          : null,
+        customer: await resolveCustomerWithOutletDefault({
+          name: customerName,
+          phone: customerPhone,
+          alamat: customerAddress,
+        }),
         ...(futureVoucher?.length > 0 && customerEmail
           ? { futureVoucher }
           : {}),
@@ -455,7 +641,7 @@ export const useBillOperations = ({
       };
 
       // Cek apakah bill dengan ID ini sudah ada
-      const billIndex = bills.findIndex((bill) => bill._id === _id);
+      const billIndex = bills.findIndex((bill) => bill._id === billId);
 
       if (billIndex === -1) {
         // Bill belum ada, tambahkan baru
@@ -530,7 +716,10 @@ export const useBillOperations = ({
         return;
       }
 
-      // Simpan bill terlebih dahulu
+      // Simpan bill terlebih dahulu — pastikan _id sesuai outlet aktif (bukan sisa AsyncStorage lama)
+      const { _id: billId, kodeInvoice: billKodeInvoice } =
+        await rekeyBillIdentityIfNeeded(outlet);
+
       const saveResult = await handleSimpanBillOffline({
         isPrintedCustomerBilling: isPrintedCustomerBilling,
         done: done,
@@ -548,33 +737,17 @@ export const useBillOperations = ({
         return;
       }
 
-      let customer = null;
-      if (customerName || customerPhone || customerEmail) {
-        // Only create a customer object if at least one field has data
-        const hasData = Boolean(
-          customerName ||
-          customerEmail ||
-          customerPhone ||
-          customerJenisKel ||
-          customerAddress,
-        );
-
-        if (hasData) {
-          customer = {
-            name: customerName || "",
-            email: customerEmail || "",
-            phone: customerPhone || "",
-            jenisKelamin: customerJenisKel || "",
-            alamat: customerAddress || "",
-          };
-        }
-      }
+      const customer = await resolveCustomerWithOutletDefault({
+        name: customerName,
+        phone: customerPhone,
+        alamat: customerAddress,
+      });
       if (!salesPerson) {
         alert("Sales person tidak boleh kosong");
         return;
       }
       const bill = {
-        _id,
+        _id: billId,
         total: setelahDiskon,
         subTotal: cebelumDiskon,
         currentBill,
@@ -585,7 +758,7 @@ export const useBillOperations = ({
         spg,
         customer,
         paymentMethod,
-        kodeInvoice,
+        kodeInvoice: billKodeInvoice,
         tanggalBayar: tanggalBayar,
       };
 
@@ -620,8 +793,8 @@ export const useBillOperations = ({
 
         try {
           const navResult = await cetakBillStateless({
-            _id,
-            kodeInvoice,
+            _id: billId,
+            kodeInvoice: billKodeInvoice,
             currentBill,
             diskon,
             promo,
@@ -676,6 +849,7 @@ export const useBillOperations = ({
             error?.message ||
             "Gagal SalesOrderAutoPostingShip";
           Alert.alert("Gagal Cetak Bill (NAV)", msg);
+          console.log("error:", error);
           setLoadingPrinting(false);
           return;
         }
@@ -700,6 +874,14 @@ export const useBillOperations = ({
 
         try {
           const time = excactTimeString();
+          if (!bill?.customer?.name) {
+            Alert.alert(
+              "Customer diperlukan",
+              "Isi customer di bill, atau set Default Customer Name di konfigurasi outlet (SOAP NAV).",
+            );
+            setLoadingPrinting(false);
+            return;
+          }
           await printCetakBillCustomer(
             config,
             bill,
@@ -888,30 +1070,15 @@ export const useBillOperations = ({
           futureVouchers: futureVoucher,
           salesPerson,
           spg,
-          customer: {
-            name: customerName || "",
-            email: customerEmail || "",
-            phone: customerPhone || "",
-            jenisKelamin: customerJenisKel || "",
-            alamat: customerAddress || "",
-          },
+          customer: await resolveCustomerWithOutletDefault({
+            name: customerName,
+            phone: customerPhone,
+            alamat: customerAddress,
+          }),
           paymentMethod,
           nomorTransaksi: paymentReference || nomorTransaksi,
           tanggalBayar: tanggalBayar,
         };
-
-        // Remove empty customer object if no data exists
-        const hasCustomerData = Boolean(
-          customerName ||
-          customerEmail ||
-          customerPhone ||
-          customerJenisKel ||
-          customerAddress,
-        );
-
-        if (!hasCustomerData) {
-          delete bill.customer;
-        }
 
         //validasi data bill
         if (!bill?.total) {
@@ -1175,30 +1342,15 @@ export const useBillOperations = ({
           futureVouchers: futureVoucher,
           salesPerson,
           spg: spg,
-          customer: {
-            name: customerName || "",
-            email: customerEmail || "",
-            phone: customerPhone || "",
-            jenisKelamin: customerJenisKel || "",
-            alamat: customerAddress || "",
-          },
+          customer: await resolveCustomerWithOutletDefault({
+            name: customerName,
+            phone: customerPhone,
+            alamat: customerAddress,
+          }),
           paymentMethod,
           tanggalDitunda: new Date().toISOString(),
           status: "pending",
         };
-
-        // Remove empty customer object if no data exists
-        const hasCustomerData = Boolean(
-          customerName ||
-          customerEmail ||
-          customerPhone ||
-          customerJenisKel ||
-          customerAddress,
-        );
-
-        if (!hasCustomerData) {
-          delete kwitansiData.customer;
-        }
 
         if (Platform.OS === "android") {
           Alert.alert("Offline", "Tidak bisa cetak kwitansi saat offline", [
@@ -1678,8 +1830,7 @@ export const useBillOperations = ({
               updateStatus.spgs = true;
             }
           } else {
-            console.log("SPG TIDAK DITEMUKAN");
-            throw new Error("Spg Tidak ditemukan, coba sync untuk data baru");
+            throw new Error("No spg found, coba sync atau tambahkan ke outlet dulu");
           }
         }
       } catch (error) {

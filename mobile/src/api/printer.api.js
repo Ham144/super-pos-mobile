@@ -168,7 +168,7 @@ export const printTest = async (config) => {
       spg,
       salesPerson,
       paymentMethod,
-      customer,
+      customer, //obj
       _id,
     } = bill;
   
@@ -204,7 +204,7 @@ export const printTest = async (config) => {
       const infoBill =
         `${printerFormatter.formatWithSpace("Ext doc", _id)}\n` +
         `${printerFormatter.formatWithSpace("Waktu Print", time)}\n` +
-        `${printerFormatter.formatWithSpace("Nama Customer", customer?.name)}\n` +
+        `${printerFormatter.formatWithSpace("Nama Customer", customer?.name || "UNKNOWN")}\n` +
         `${printerFormatter.formatWithSpace("Kasir", salesPerson)}\n` +
         `${printerFormatter.formatWithSpace("Spg", spg?.name)}\n` +
         `${printerFormatter.formatWithSpace("Payment Method", paymentMethod)}\n`;
@@ -526,7 +526,7 @@ export const printTest = async (config) => {
         `${printerFormatter.formatWithSpace("Waktu Print", time)}\n` +
         `${printerFormatter.formatWithSpace(
           "Nama Customer",
-          customer?.name || "",
+          customer.name,
         )}\n` +
         `${printerFormatter.formatWithSpace("Kasir", salesPerson)}\n` +
         `${printerFormatter.formatWithSpace("Spg", spg?.name || "")}\n` +

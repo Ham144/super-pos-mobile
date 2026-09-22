@@ -1,5 +1,6 @@
 import { Router } from "express";
 import Outlet from "../models/Outlet.model.js";
+import Soap from "../models/Soap.model.js";
 import sharp from "sharp";
 import { findInventoryBySku } from "../utils/validatePoSkus.js";
 import UserRefrensi from "../models/User.model.js";
@@ -51,6 +52,9 @@ router.post("/registerOutlet", async (req, res) => {
     periodeSettlement,
     jamSettlement,
     mode,
+    defaultNoSeries,
+    defaultSellToCustNo,
+    defaultSellToCustName,
   } = req.body;
 
   if (!kodeOutlet?.trim()) {
@@ -84,6 +88,9 @@ router.post("/registerOutlet", async (req, res) => {
       periodeSettlement: periodeSettlement || 1,
       jamSettlement: jamSettlement || "00:00",
       mode: mode || undefined,
+      defaultNoSeries: defaultNoSeries || "",
+      defaultSellToCustNo: defaultSellToCustNo || "",
+      defaultSellToCustName: defaultSellToCustName || "",
     });
 
     return res.json({ message: "berhasil", data: outlet });
@@ -150,6 +157,17 @@ router.put("/edit", async (req, res) => {
       mode: req?.body?.mode || null,
     };
 
+    if (req.body.defaultNoSeries !== undefined) {
+      updateFields.defaultNoSeries = req.body.defaultNoSeries || "";
+    }
+    if (req.body.defaultSellToCustNo !== undefined) {
+      updateFields.defaultSellToCustNo = req.body.defaultSellToCustNo || "";
+    }
+    if (req.body.defaultSellToCustName !== undefined) {
+      updateFields.defaultSellToCustName =
+        req.body.defaultSellToCustName || "";
+    }
+
     if (req.body.kasirList !== undefined) {
       updateFields.kasirList = req.body.kasirList.filter(
         (item) => item !== "" && item !== undefined && item != null,
@@ -204,7 +222,34 @@ router.get("/getOutlet/:userId", async (req, res) => {
         .status(404)
         .json({ message: "akun ini belum terhubung ke outlet manapun" });
     }
-    return res.json({ data: outletDB });
+
+    const payload = outletDB.toObject ? outletDB.toObject() : { ...outletDB };
+
+    // Lengkapi default customer dari Soap.defaults bila field outlet masih kosong
+    if (
+      !payload.defaultSellToCustName ||
+      !payload.defaultSellToCustNo ||
+      !payload.defaultNoSeries
+    ) {
+      const soap = await Soap.findOne({ outlet: payload._id })
+        .select("defaults noSeries")
+        .lean();
+      if (soap) {
+        payload.defaultNoSeries =
+          payload.defaultNoSeries ||
+          soap.defaults?.noSeries ||
+          soap.noSeries ||
+          "";
+        payload.defaultSellToCustNo =
+          payload.defaultSellToCustNo || soap.defaults?.sellToCustNo || "";
+        payload.defaultSellToCustName =
+          payload.defaultSellToCustName ||
+          soap.defaults?.sellToCustName ||
+          "";
+      }
+    }
+
+    return res.json({ data: payload });
   } catch (error) {
     return res.status(500).json({ message: "Terjadi kesalahan" });
   }

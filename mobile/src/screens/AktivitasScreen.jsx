@@ -26,6 +26,7 @@ import SettlementPrint from "../components/SettlementPrint";
 import { useOnlineSync } from "../hooks/useOnlineSync";
 import { endOfDayBySku, voidBillStateless } from "../api";
 import { useOutlet } from "../store";
+import { filterBillsForOutlet } from "../utils/reconcileOutletSession";
 
 const AktivitasScreen = ({ navigation }) => {
   const { outlet } = useOutlet();
@@ -56,7 +57,10 @@ const AktivitasScreen = ({ navigation }) => {
       const billsData = await AsyncStorage.getItem("bills");
 
       if (billsData) {
-        const parsedBills = JSON.parse(billsData);
+        const parsedBills = filterBillsForOutlet(
+          JSON.parse(billsData),
+          outlet?.kodeOutlet
+        );
         // Sort by createdAt in descending order (newest first)
         const sortedBills = parsedBills.sort(
           (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
@@ -72,7 +76,7 @@ const AktivitasScreen = ({ navigation }) => {
     } finally {
       setIsLoading(false);
     }
-  }, [filterStatus]);
+  }, [filterStatus, outlet?.kodeOutlet]);
 
   // Listen for app state changes
   useEffect(() => {

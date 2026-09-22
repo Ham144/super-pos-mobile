@@ -146,18 +146,92 @@ const buildOrderId = (invoice, attempt) => {
 
 const getInvoiceForCurrentOutlet = async (req, { invoiceId, kodeInvoice }) => {
   const outlet = await Outlet.findOne({ kasirList: { $in: [req.userId] } }).select(
-    "kodeOutlet",
+    "_id kodeOutlet mode",
   );
   if (!outlet) return { error: "Outlet kasir tidak ditemukan", status: 403 };
 
-  const filter = invoiceId ? { _id: invoiceId } : { kodeInvoice };
-  const invoice = await Invoice.findOne(filter);
-  if (!invoice) return { error: "Bill tidak terdaftar", status: 404 };
-  if (!invoice.kodeInvoice.startsWith(outlet.kodeOutlet)) {
-    return { error: "Bill bukan milik outlet Anda", status: 403 };
+  let invoice = null;
+  if (invoiceId) {
+    invoice = await Invoice.findById(invoiceId);
+  }
+  // Fallback: mobile _id bisa beda dari row sync lama yang sudah punya kodeInvoice sama
+  if (!invoice && kodeInvoice) {
+    invoice = await Invoice.findOne({ kodeInvoice });
   }
 
-  return { invoice };
+  if (!invoice) return { error: "Bill tidak terdaftar", status: 404, outlet };
+  if (!invoice.kodeInvoice.startsWith(outlet.kodeOutlet)) {
+    return { error: "Bill bukan milik outlet Anda", status: 403, outlet };
+  }
+
+  return { invoice, outlet };
+};
+
+/** Upsert invoice dari snapshot bill mobile (offline sync belum jalan / midtrans butuh row di Mongo). */
+const upsertInvoiceFromBillSnapshot = async (bill, outlet) => {
+  if (!bill?._id || !bill?.kodeInvoice) {
+    const error = new Error("Snapshot bill wajib punya _id dan kodeInvoice");
+    error.status = 400;
+    throw error;
+  }
+
+  if (!String(bill.kodeInvoice).startsWith(outlet.kodeOutlet)) {
+    const error = new Error("Bill bukan milik outlet Anda");
+    error.status = 403;
+    throw error;
+  }
+
+  const spgId =
+    typeof bill.spg === "object" ? bill.spg?._id || bill.spg?.id : bill.spg;
+  const customerValue =
+    typeof bill.customer === "string"
+      ? bill.customer
+      : bill.customer?.name || bill.customer?.phone || "";
+
+  const payload = {
+    currentBill: Array.isArray(bill.currentBill) ? bill.currentBill : [],
+    diskon: bill.diskon || bill.diskons || [],
+    promo: bill.promo || bill.promos || [],
+    futureVoucher: bill.futureVoucher || bill.futureVouchers || [],
+    implementedVoucher: bill.implementedVoucher || [],
+    subTotal: Number(bill.subTotal ?? bill.cebelumDiskon ?? 0),
+    total: Number(bill.total ?? bill.setelahDiskon ?? 0),
+    salesPerson: bill.salesPerson,
+    spg: spgId ? String(spgId) : "",
+    customer: customerValue,
+    paymentMethod: bill.paymentMethod,
+    nomorTransaksi: bill.nomorTransaksi,
+    outlet: outlet._id,
+    isPrintedCustomerBilling: Boolean(bill.isPrintedCustomerBilling),
+    isPrintedKwitansi: Boolean(bill.isPrintedKwitansi),
+    done: Boolean(bill.done),
+    isVoid: Boolean(bill.isVoid),
+  };
+
+  // Hindari E11000: kodeInvoice unik bisa sudah ada di _id lain (hasil sync)
+  const existing =
+    (await Invoice.findById(bill._id)) ||
+    (await Invoice.findOne({ kodeInvoice: bill.kodeInvoice }));
+
+  if (existing) {
+    return Invoice.findByIdAndUpdate(
+      existing._id,
+      {
+        $set: {
+          ...payload,
+          // Pertahankan kodeInvoice yang sudah di DB
+          kodeInvoice: existing.kodeInvoice || bill.kodeInvoice,
+        },
+      },
+      { new: true },
+    );
+  }
+
+  return Invoice.create({
+    _id: bill._id,
+    kodeInvoice: bill.kodeInvoice,
+    ...payload,
+  });
 };
 
 const validateInvoiceForMidtrans = async (invoice) => {
@@ -249,7 +323,7 @@ const sendPaymentStatus = (res, invoice) => {
 };
 
 const createMidtransTransaction = async (req, res) => {
-  const { invoiceId, kodeInvoice } = req.body;
+  const { invoiceId, kodeInvoice, bill } = req.body;
   let orderId;
   let externalRequestStarted = false;
 
@@ -257,7 +331,18 @@ const createMidtransTransaction = async (req, res) => {
     if (!invoiceId && !kodeInvoice) {
       return res.status(400).json({ message: "invoiceId atau kodeInvoice wajib diisi" });
     }
-    const result = await getInvoiceForCurrentOutlet(req, { invoiceId, kodeInvoice });
+
+    let result = await getInvoiceForCurrentOutlet(req, {
+      invoiceId,
+      kodeInvoice: bill?.kodeInvoice || kodeInvoice,
+    });
+
+    // Offline bill hidup di AsyncStorage dulu — kalau belum ada di Mongo, upsert dari snapshot mobile
+    if (result.error === "Bill tidak terdaftar" && bill && result.outlet) {
+      const upserted = await upsertInvoiceFromBillSnapshot(bill, result.outlet);
+      result = { invoice: upserted, outlet: result.outlet };
+    }
+
     if (result.error) return res.status(result.status).json({ message: result.error });
 
     const { invoice } = result;
@@ -304,10 +389,16 @@ const createMidtransTransaction = async (req, res) => {
     if (!lock) return res.status(409).json({ message: "Bill tidak dapat diproses untuk pembayaran" });
 
     externalRequestStarted = true;
+    const customerLabel =
+      typeof invoice.customer === "string"
+        ? invoice.customer
+        : invoice.customer?.name || "";
     const transaction = await createPaymentTransaction({
       orderId,
       grossAmount: Number(invoice.total),
-      customerDetails: invoice.customer ? { email: String(invoice.customer) } : undefined,
+      customerDetails: customerLabel
+        ? { first_name: String(customerLabel).slice(0, 50) }
+        : undefined,
     });
 
     await Invoice.findOneAndUpdate(
@@ -335,7 +426,7 @@ const createMidtransTransaction = async (req, res) => {
         { $set: { "paymentGateway.status": "failed" } },
       );
     }
-    return res.status(500).json({
+    return res.status(error.status || 500).json({
       message: error?.message || "Gagal generate token payment gateway",
     });
   }
@@ -347,18 +438,49 @@ router.post("/request-token", createMidtransTransaction);
 
 router.get("/midtrans/status/:invoiceId", async (req, res) => {
   try {
-    const result = await getInvoiceForCurrentOutlet(req, { invoiceId: req.params.invoiceId });
-    if (result.error) return res.status(result.status).json({ message: result.error });
+    const result = await getInvoiceForCurrentOutlet(req, {
+      invoiceId: req.params.invoiceId,
+    });
+    if (result.error) {
+      return res.status(result.status).json({ message: result.error });
+    }
 
     let { invoice } = result;
-    if (invoice.paymentGateway?.provider === "midtrans" && invoice.paymentGateway?.orderId && invoice.paymentGateway?.status === MIDTRANS_PENDING) {
-      const status = await getMidtransTransactionStatus(invoice.paymentGateway.orderId);
-      invoice = (await applyMidtransStatus(status)) || invoice;
+    const gateway = invoice.paymentGateway || {};
+
+    if (
+      gateway.provider === "midtrans" &&
+      gateway.orderId &&
+      gateway.status === MIDTRANS_PENDING
+    ) {
+      try {
+        const status = await getMidtransTransactionStatus(gateway.orderId);
+        invoice = (await applyMidtransStatus(status)) || invoice;
+      } catch (midtransError) {
+        // Snap token sudah dibuat, tapi Core API /v2/{order_id}/status sering 404
+        // sampai customer memilih metode / transaksi benar-benar terbentuk.
+        // Anggap masih pending — jangan gagalkan polling mobile.
+        const midtrans404 =
+          midtransError?.httpStatusCode == 404 ||
+          midtransError?.ApiResponse?.status_code == "404" ||
+          /Transaction doesn't exist/i.test(
+            midtransError?.ApiResponse?.status_message ||
+              midtransError?.message ||
+              "",
+          );
+
+        if (!midtrans404) {
+          throw midtransError;
+        }
+      }
     }
+
     return sendPaymentStatus(res, invoice);
   } catch (error) {
     console.error("Gagal memeriksa status Midtrans:", error);
-    return res.status(502).json({ message: "Gagal memeriksa status pembayaran Midtrans" });
+    return res
+      .status(502)
+      .json({ message: "Gagal memeriksa status pembayaran Midtrans" });
   }
 });
 

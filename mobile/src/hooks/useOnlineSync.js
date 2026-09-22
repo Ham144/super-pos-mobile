@@ -1,10 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  getisOnline,
-  getOuletByUserId,
-  syncronizeOfflineMode,
-} from "../api";
+import { getisOnline, getOuletByUserId } from "../api";
+import { syncronizeOfflineMode } from "../api/synchronize";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Alert, Platform, ToastAndroid } from "react-native";
 import {
@@ -16,7 +13,32 @@ import {
 } from "../store";
 import useAccount from "./useAccount";
 import { filterVisibleInventories } from "../utils/inventoryFilters";
-import { getLocalOutletMode } from "../utils/reconcileOutletSession";
+import {
+  filterBillsForOutlet,
+  getLocalOutletMode,
+} from "../utils/reconcileOutletSession";
+
+const resolveSyncErrorMessage = (error) => {
+  const data = error?.response?.data;
+  if (typeof data === "string" && data.trim()) return data;
+  if (data?.message) return data.message;
+  if (data?.error) {
+    return typeof data.error === "string" ? data.error : data.error?.message;
+  }
+  if (error?.message) return error.message;
+  return "Terjadi kesalahan sinkronisasi";
+};
+
+const isSessionInvalidError = (error) => {
+  const status = error?.response?.status;
+  const code = error?.response?.data?.code;
+  const message = String(error?.response?.data?.message || error?.message || "");
+  return (
+    status === 401 ||
+    code === "USER_NOT_FOUND" ||
+    /tidak ditemukan di database/i.test(message)
+  );
+};
 
 export const useOnlineSync = () => {
   const queryClient = useQueryClient();
@@ -49,53 +71,52 @@ export const useOnlineSync = () => {
           const res = await syncronizeOfflineMode(isOnline);
           return res;
         } catch (error) {
+          const message = resolveSyncErrorMessage(error);
+          const hint = error?.response?.data?.hint;
+
+          // sessionAuth interceptor sudah logout — jangan Alert lagi
+          if (isSessionInvalidError(error)) {
+            return;
+          }
+
           if (Platform.OS === "android" || Platform.OS === "ios") {
-            if (error?.response?.data?.hint === "perbedaan data login") {
+            if (hint === "perbedaan data login") {
               Alert.alert(
                 "Konfirmasi",
-                "Outlet tidak cocok. Kamu perlu logout dan login ulang, konfirmasi?",
+                message ||
+                  "Outlet tidak cocok. Kamu perlu logout dan login ulang, konfirmasi?",
                 [
                   {
                     text: "Batal",
                     style: "cancel",
-                    onPress: () => {}, 
+                    onPress: () => {},
                   },
                   {
                     text: "Ya, Logout",
                     onPress: async () => {
-                      console.log("Akan keluar karena data sangat berbeda");
                       await logoutNoSync();
                     },
                   },
                 ],
-                { cancelable: false }
+                { cancelable: false },
               );
             } else {
-              Alert.alert(
-                "Kesalahan",
-                error?.response?.data?.message ||
-                  "Terjadi kesalahan sinkronisasi"
-              );
+              Alert.alert("Kesalahan Sinkronisasi", message);
             }
           } else if (Platform.OS === "web") {
-            if (error?.response?.data?.hint === "perbedaan data login") {
+            if (hint === "perbedaan data login") {
               const yesLogout = window.confirm(
-                "Outlet Tidak cocok. Kamu perlu logout dan login ulang, konfirmasi?"
+                message ||
+                  "Outlet tidak cocok. Kamu perlu logout dan login ulang, konfirmasi?",
               );
               if (yesLogout) {
-                console.log("Akan keluar karena data sangat berbeda");
                 await logoutNoSync();
-              } else {
-                return;
               }
             } else {
-              alert(
-                error?.response?.data?.message ||
-                  "kegagalan sinkronisasi di web"
-              );
+              alert(message);
             }
           } else {
-            console.log(error);
+            console.log("sync error:", message, error);
           }
         }
       },
@@ -142,6 +163,23 @@ export const useOnlineSync = () => {
 
         if (outletToSave) {
           try {
+            const prevRaw = await AsyncStorage.getItem("outlet");
+            const prevId = prevRaw ? JSON.parse(prevRaw)?._id : null;
+            const nextId = outletToSave?._id;
+            const switched =
+              prevId && nextId && String(prevId) !== String(nextId);
+
+            if (switched) {
+              const { resetOutletScopedLocalData } = await import(
+                "../utils/reconcileOutletSession"
+              );
+              await resetOutletScopedLocalData();
+              ToastAndroid?.show(
+                "Outlet berganti — data lokal outlet lama dibuang",
+                ToastAndroid.LONG,
+              );
+            }
+
             outletToSave.pendapatanFromApp = 0;
             outletToSave.terakhirSync = new Date().toISOString();
 
@@ -324,6 +362,10 @@ export const useOnlineSync = () => {
               ? JSON.parse(existingBillsStr)
               : [];
 
+            const kodeOutlet =
+              outletToSave?.kodeOutlet ||
+              useOutlet.getState()?.outlet?.kodeOutlet;
+
             const existingBillsMap = {};
             existingBills.forEach((bill) => {
               existingBillsMap[bill._id] = bill;
@@ -390,7 +432,9 @@ export const useOnlineSync = () => {
               }
             });
 
-            await AsyncStorage.setItem("bills", JSON.stringify(mergedBills))
+            const scopedMerged = filterBillsForOutlet(mergedBills, kodeOutlet);
+
+            await AsyncStorage.setItem("bills", JSON.stringify(scopedMerged))
               .then(async () => {
                 console.log(
                   "berhasil sinkronisasi bill (dengan status yang ada sebelumnya dipertahankan)"

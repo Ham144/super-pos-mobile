@@ -1,11 +1,17 @@
-import  { useCallback, memo } from "react";
+import { useCallback, memo } from "react";
 import { View, Text, FlatList, StyleSheet, Pressable } from "react-native";
-import { CircleX, ArrowBigRightDash, Pencil } from "lucide-react-native";
+import {
+  CircleX,
+  ArrowBigRightDash,
+  Pencil,
+  BadgeCheck,
+  Lock,
+} from "lucide-react-native";
 import { useCurrentBill } from "../store";
 
 export const formatRp = (value) =>
   Intl.NumberFormat("id-ID", { maximumFractionDigits: 0 }).format(
-    Number(value) || 0
+    Number(value) || 0,
   );
 
 const BillItem = memo(
@@ -14,25 +20,34 @@ const BillItem = memo(
     const overLimit = item.quantity > item.limitQuantity;
 
     return (
-      <View style={styles.row}>
+      <View style={[styles.row, isPaid && styles.rowPaid]}>
         <View style={styles.leftActions}>
-          {!isPaid && (
+          {!isPaid ? (
             <Pressable onPress={() => onRemove(item)} hitSlop={8}>
               <CircleX size={20} color="red" />
             </Pressable>
+          ) : (
+            <Lock size={16} color="#059669" />
           )}
         </View>
 
         <View style={styles.main}>
           <View style={styles.titleRow}>
-            <Text style={styles.skuText} numberOfLines={1}>
+            <Text
+              style={[styles.skuText, isPaid && styles.skuTextPaid]}
+              numberOfLines={1}
+            >
               {item?.sku || item?.description || "Item Description"}
             </Text>
             {item.quantity > 0 && (
               <View
                 style={[
                   styles.qtyBadge,
-                  overLimit ? styles.qtyBadgeDanger : styles.qtyBadgeOk,
+                  isPaid
+                    ? styles.qtyBadgePaid
+                    : overLimit
+                      ? styles.qtyBadgeDanger
+                      : styles.qtyBadgeOk,
                 ]}
               >
                 <Text style={styles.qtyText}>{item.quantity} pcs</Text>
@@ -48,17 +63,24 @@ const BillItem = memo(
         <View style={styles.priceCol}>
           {item.quantity > 1 && (
             <View style={styles.unitPriceRow}>
-              <Text style={styles.priceText}>
+              <Text style={[styles.priceText, isPaid && styles.priceTextPaid]}>
                 Rp {formatRp(item?.RpHargaDasar)}
               </Text>
-              <ArrowBigRightDash size={16} color="#2A4B8D" />
+              <ArrowBigRightDash
+                size={16}
+                color={isPaid ? "#059669" : "#2A4B8D"}
+              />
             </View>
           )}
-          <Text style={styles.priceText}>Rp {formatRp(lineTotal)}</Text>
-          {!isPaid && (
+          <Text style={[styles.priceText, isPaid && styles.priceTextPaid]}>
+            Rp {formatRp(lineTotal)}
+          </Text>
+          {!isPaid ? (
             <Pressable onPress={() => onEdit(item)} hitSlop={8}>
               <Pencil size={20} color="#3B82F6" />
             </Pressable>
+          ) : (
+            <BadgeCheck size={18} color="#059669" />
           )}
         </View>
       </View>
@@ -70,13 +92,13 @@ const BillItem = memo(
     prev.item?.quantity === next.item?.quantity &&
     prev.item?.catatan === next.item?.catatan &&
     prev.item?.RpHargaDasar === next.item?.RpHargaDasar &&
-    prev.item?.limitQuantity === next.item?.limitQuantity
+    prev.item?.limitQuantity === next.item?.limitQuantity,
 );
 
 export const BillItems = memo(({ onEditItem, onRemoveItem }) => {
   const currentBill = useCurrentBill((state) => state.currentBill);
   const removeFromCurrentBill = useCurrentBill(
-    (state) => state.removeFromCurrentBill
+    (state) => state.removeFromCurrentBill,
   );
   const isPaid = useCurrentBill((state) => state.done);
 
@@ -88,14 +110,14 @@ export const BillItems = memo(({ onEditItem, onRemoveItem }) => {
       }
       removeFromCurrentBill(item);
     },
-    [onRemoveItem, removeFromCurrentBill]
+    [onRemoveItem, removeFromCurrentBill],
   );
 
   const handleEditItem = useCallback(
     (item) => {
       onEditItem?.(item);
     },
-    [onEditItem]
+    [onEditItem],
   );
 
   const keyExtractor = useCallback((item) => item.sku, []);
@@ -109,7 +131,7 @@ export const BillItems = memo(({ onEditItem, onRemoveItem }) => {
         isPaid={isPaid}
       />
     ),
-    [handleRemoveItem, handleEditItem, isPaid]
+    [handleRemoveItem, handleEditItem, isPaid],
   );
 
   if (!currentBill?.length) {
@@ -122,7 +144,19 @@ export const BillItems = memo(({ onEditItem, onRemoveItem }) => {
   }
 
   return (
-    <View style={styles.listWrap}>
+    <View style={[styles.listWrap, isPaid && styles.listWrapPaid]}>
+      {isPaid ? (
+        <View style={styles.paidBanner}>
+          <BadgeCheck size={18} color="#047857" />
+          <View style={styles.paidBannerTextCol}>
+            <Text style={styles.paidBannerTitle}>Bill Selesai</Text>
+            <Text style={styles.paidBannerSub}>
+              Item terkunci — edit & hapus tidak tersedia
+            </Text>
+          </View>
+        </View>
+      ) : null}
+
       <FlatList
         data={currentBill}
         renderItem={renderItem}
@@ -143,6 +177,39 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "#D1D5DB",
   },
+  listWrapPaid: {
+    borderTopColor: "#A7F3D0",
+    backgroundColor: "#F0FDF4",
+  },
+  paidBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginHorizontal: 8,
+    marginTop: 8,
+    marginBottom: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: "#D1FAE5",
+    borderWidth: 1,
+    borderColor: "#6EE7B7",
+  },
+  paidBannerTextCol: {
+    flex: 1,
+  },
+  paidBannerTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#047857",
+    fontFamily: "gilroyBold",
+  },
+  paidBannerSub: {
+    marginTop: 2,
+    fontSize: 11,
+    color: "#065F46",
+    fontFamily: "gilroyRegular",
+  },
   row: {
     flexDirection: "row",
     alignItems: "center",
@@ -152,8 +219,13 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#F3F4F6",
   },
+  rowPaid: {
+    borderBottomColor: "#D1FAE5",
+    opacity: 0.92,
+  },
   leftActions: {
     width: 24,
+    alignItems: "center",
   },
   main: {
     flex: 1,
@@ -171,6 +243,9 @@ const styles = StyleSheet.create({
     color: "#1F2937",
     fontFamily: "gilroyRegular",
   },
+  skuTextPaid: {
+    color: "#065F46",
+  },
   catatanText: {
     fontSize: 14,
     marginTop: 4,
@@ -187,6 +262,9 @@ const styles = StyleSheet.create({
   },
   qtyBadgeDanger: {
     backgroundColor: "#EF4444",
+  },
+  qtyBadgePaid: {
+    backgroundColor: "#059669",
   },
   qtyText: {
     color: "#fff",
@@ -206,6 +284,10 @@ const styles = StyleSheet.create({
   priceText: {
     fontSize: 14,
     color: "#1F2937",
+  },
+  priceTextPaid: {
+    color: "#065F46",
+    fontWeight: "600",
   },
   emptyWrap: {
     flex: 1,

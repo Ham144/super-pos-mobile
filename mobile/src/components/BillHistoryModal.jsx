@@ -13,7 +13,10 @@ import {
   Platform,
   ToastAndroid,
 } from "react-native";
-import { useCurrentBill } from "../store";
+import { useCurrentBill, useOutlet } from "../store";
+import {
+  filterBillsForOutlet,
+} from "../utils/reconcileOutletSession";
 
 const BillHistoryModal = ({
   allBillTersimpan,
@@ -28,6 +31,8 @@ const BillHistoryModal = ({
 
   //zustand
   const clearSale = useCurrentBill((state) => state.clearSale);
+  const { outlet } = useOutlet();
+  const kodeOutlet = outlet?.kodeOutlet;
 
   const handleDeleteBillOffline = async (_id) => {
     try {
@@ -47,8 +52,8 @@ const BillHistoryModal = ({
 
       await AsyncStorage.setItem("bills", JSON.stringify(updatedBills));
 
-      // Menggunakan fungsi pengurutan yang sama dengan parent component
-      const sortedBills = [...updatedBills].sort((a, b) => {
+      const scopedBills = filterBillsForOutlet(updatedBills || [], kodeOutlet);
+      const sortedBills = [...scopedBills].sort((a, b) => {
         if (a.createdAt && b.createdAt) {
           return new Date(b.createdAt) - new Date(a.createdAt);
         }
@@ -82,10 +87,10 @@ const BillHistoryModal = ({
   const [spgList, setSpgList] = useState([]);
 
   useEffect(() => {
-    // Data sudah diurutkan dari parent component, tidak perlu reverse() lagi
-    setAllBillTersimpanState(allBillTersimpan);
+    setAllBillTersimpanState(
+      filterBillsForOutlet(allBillTersimpan || [], kodeOutlet)
+    );
 
-    // Fungsi untuk memuat data SPG
     const fetchingSpgFromOffline = async () => {
       try {
         const spgData = await AsyncStorage.getItem("spg");
@@ -101,7 +106,6 @@ const BillHistoryModal = ({
           "items"
         );
 
-        // Verifikasi bahwa itu array yang valid
         if (Array.isArray(parsedData)) {
           setSpgList(parsedData);
         } else {
@@ -114,14 +118,15 @@ const BillHistoryModal = ({
       }
     };
 
-    // Fungsi untuk memuat data kwitansi tertunda
     const fetchKwitansiTertunda = async () => {
       try {
         const billsData = await AsyncStorage.getItem("bills");
         if (billsData) {
           const parsedData = JSON.parse(billsData);
-
-          const pendingReceipts = parsedData.filter(
+          const pendingReceipts = filterBillsForOutlet(
+            parsedData,
+            kodeOutlet
+          ).filter(
             (bill) =>
               bill.done === true &&
               bill.isPrintedKwitansi === false &&
@@ -137,10 +142,9 @@ const BillHistoryModal = ({
       }
     };
 
-    // Eksekusi fungsi load data
     fetchingSpgFromOffline();
     fetchKwitansiTertunda();
-  }, [allBillTersimpan]);
+  }, [allBillTersimpan, kodeOutlet]);
 
   // Filter bill berdasarkan query pencarian
   const filteredBillTersimpan = allBillTersimpanState

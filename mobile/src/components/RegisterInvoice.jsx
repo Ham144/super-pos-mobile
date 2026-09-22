@@ -24,6 +24,7 @@ import { useBillOperations } from "../hooks/useBillOperations";
 import MidtransOptionModal from "./MidtransOptionModal";
 import { ModalNomorTransaksi } from "./ModalNomorTransaksi";
 import ModalVoucherRedeem from "./ModalVoucherRedeem";
+import { purgeForeignOutletBills } from "../utils/reconcileOutletSession";
 
 const RegisterInvoice = ({ fullWidth = false }) => {
   // State
@@ -200,14 +201,13 @@ const RegisterInvoice = ({ fullWidth = false }) => {
   const handleShowBillTersimpanOffline = async () => {
     try {
       setIsShowBillTersimpan(true);
-      const billsOffline =
-        JSON.parse(await AsyncStorage.getItem("bills")) || [];
+      const kodeOutlet = outlet?.kodeOutlet;
+      const billsOffline = kodeOutlet
+        ? await purgeForeignOutletBills(kodeOutlet)
+        : JSON.parse(await AsyncStorage.getItem("bills")) || [];
 
       // Urutkan bill berdasarkan yang terbaru dulu
-      // Asumsikan bill yang ditambahkan terakhir adalah yang paling baru
-      // Jika ada properti timestamp, gunakan itu sebagai dasar pengurutan
       const sortedBills = [...billsOffline].sort((a, b) => {
-        // Jika ada timestamp (createdAt, updatedAt, atau timestamp lain), gunakan itu
         if (a.createdAt && b.createdAt) {
           return new Date(b.createdAt) - new Date(a.createdAt);
         }
@@ -217,19 +217,12 @@ const RegisterInvoice = ({ fullWidth = false }) => {
         if (a.timestamp && b.timestamp) {
           return new Date(b.timestamp) - new Date(a.timestamp);
         }
-
-        // Fallback ke perbandingan kodeInvoice jika ada (asumsikan kode invoice bisa diurutkan)
         if (a.kodeInvoice && b.kodeInvoice) {
-          // Jika kode invoice berisi timestamp (misal INV-20230605-001)
-          // Ekstrak timestamp dari kodeInvoice jika mengikuti format tertentu
           return b.kodeInvoice.localeCompare(a.kodeInvoice);
         }
-
-        // Jika tidak bisa melakukan pengurutan yang andal, biarkan urutan tetap seperti aslinya
         return 0;
       });
 
-      // Simpan hasil pengurutan untuk digunakan nanti
       setAllBillTersimpan(sortedBills);
     } catch (error) {
       console.error(

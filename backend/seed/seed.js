@@ -12,6 +12,7 @@ import SpgRefrensi from "../models/SpgRefrensi.model.js";
 import Soap from "../models/Soap.model.js";
 import ExternalProductReference from "../models/ExternalProductRefrence.js";
 import { createDefaultSoapSeed } from "../utils/soapNav/templates.js";
+import PrinterModel from "../models/Printer.model.js";
 
 const SUPERADMIN_USERNAME = "superadmin";
 const SUPERADMIN_PASSWORD = process.env.SEED_SUPERADMIN_PASSWORD;
@@ -90,6 +91,14 @@ const sampleProducts = [
     quantity: 25,
   },
 ];
+
+const seedPrinter = async () => {
+  const printers = [
+    { name: "Printer Ham", ipPrinter: "192.168.21.160", tipePrinter: "EPSON", portPrinter: "9100", isDefault: true }
+  ];
+  const result = await PrinterModel.insertMany(printers);
+  return result.length;
+};
 
 const seedBrands = async () => {
   const productsByBrand = sampleProducts.reduce((result, product) => {
@@ -377,8 +386,18 @@ const seedSoapNavForOutlets = async (outlets) => {
   const endpoint = process.env.NAV_SOAP_ENDPOINT;
   const usernameNTLM = process.env.SOAP_USERNAME_NTLM_SEED;
   const passwordNTLM = process.env.SOAP_PASSWORD_NTLM_SEED;
+  const noSeries = process.env.SOAP_NO_SERIES_SEED;
+  const sellToCustNo = process.env.SOAP_DEFAULT_CUSTOMER_NO_SEED;
+  const sellToCustName = process.env.SOAP_DEFAULT_CUSTOMER_NAME_SEED;
 
   if (!endpoint || !usernameNTLM || !passwordNTLM) {
+    return 0;
+  }
+
+  if (!noSeries || !sellToCustNo || !sellToCustName) {
+    console.warn(
+      "SOAP seed dilewati: set SOAP_NO_SERIES_SEED, SOAP_DEFAULT_CUSTOMER_NO_SEED, SOAP_DEFAULT_CUSTOMER_NAME_SEED di .env (tanpa fallback hardcode).",
+    );
     return 0;
   }
 
@@ -386,12 +405,14 @@ const seedSoapNavForOutlets = async (outlets) => {
     endpoint,
     usernameNTLM,
     passwordNTLM,
-    noSeries: "SO-RTL",
+    noSeries,
+    sellToCustNo,
+    sellToCustName,
   });
 
   const statelessOutlets = outlets.filter((outlet) => outlet.mode === "stateless");
   let seeded = 0;
-  
+
   for (const outlet of statelessOutlets) {
     await Soap.findOneAndUpdate(
       { outlet: outlet._id },
@@ -399,6 +420,17 @@ const seedSoapNavForOutlets = async (outlets) => {
         $set: { outlet: outlet._id, ...soapSeed },
       },
       { new: true, upsert: true, setDefaultsOnInsert: true },
+    );
+
+    await Outlet.updateOne(
+      { _id: outlet._id },
+      {
+        $set: {
+          defaultNoSeries: noSeries,
+          defaultSellToCustNo: sellToCustNo,
+          defaultSellToCustName: sellToCustName,
+        },
+      },
     );
     seeded += 1;
   }
@@ -508,7 +540,7 @@ const seed = async () => {
   const systemConfig = await seedSystemConfigFromEnv();
   const soapSeededCount = await seedSoapNavForOutlets(outlets);
   const eprSeededCount = await seedExternalProductReferences(outlets);
-
+  const printerSeededCount = await seedPrinter();
   const statelessCount = outlets.filter((o) => o.mode === "stateless").length;
   const offlineCount = outlets.filter((o) => o.mode === "offline").length;
 
@@ -536,6 +568,9 @@ const seed = async () => {
   );
   console.log(
     `- ExternalProductReference: ${eprSeededCount > 0 ? `${eprSeededCount} outlet` : "dilewati"}`,
+  );
+  console.log(
+    `- Printer: ${printerSeededCount > 0 ? `${printerSeededCount} printer berhasil di inisialisasi` : "dilewati"}`,
   );
 
   if (RESET_SUPERADMIN_PASSWORD) {

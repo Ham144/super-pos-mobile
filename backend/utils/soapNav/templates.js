@@ -51,15 +51,25 @@ export const createDefaultNavOperations = () => [
   },
 ];
 
+/**
+ * Seed helper — caller wajib kirim nilai dari .env (bukan fallback di sini).
+ */
 export const createDefaultSoapSeed = ({
   endpoint,
   usernameNTLM,
   passwordNTLM,
-  noSeries = "SO-RTL",
+  noSeries,
+  sellToCustNo,
+  sellToCustName,
 }) => {
   if (!endpoint || !usernameNTLM || !passwordNTLM) {
     throw new Error(
       "endpoint, usernameNTLM, dan passwordNTLM wajib untuk seed SOAP NAV",
+    );
+  }
+  if (!noSeries || !sellToCustNo || !sellToCustName) {
+    throw new Error(
+      "noSeries, sellToCustNo, dan sellToCustName wajib untuk seed SOAP NAV",
     );
   }
 
@@ -68,7 +78,13 @@ export const createDefaultSoapSeed = ({
     usernameNTLM,
     passwordNTLM,
     timeoutMs: 30000,
+    // legacy top-level
     noSeries,
+    defaults: {
+      noSeries,
+      sellToCustNo,
+      sellToCustName,
+    },
     operations: createDefaultNavOperations(),
   };
 };

@@ -2,9 +2,9 @@ import mongoose from "mongoose";
 
 const pelangganSchema = new mongoose.Schema(
   {
-    name: String,
-    phone: { type: String, unique: true },
-    alamat: String,
+    phone: { type: String, unique: true, required: false },
+    name: { type: String, required: true },
+    alamat: { type: String, required: false },
   },
   { timestamps: true }
 );

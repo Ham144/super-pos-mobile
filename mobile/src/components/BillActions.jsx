@@ -2,7 +2,6 @@ import React from "react";
 import { View, Text, TouchableOpacity, Platform, Alert } from "react-native";
 import { Trash2, SaveAll, Archive, ReceiptText } from "lucide-react-native";
 import { useCurrentBill, useLoading } from "../store";
-import { useOnlineSync } from "../hooks/useOnlineSync";
 
 export const BillActions = ({
   _id,
@@ -41,7 +40,6 @@ export const BillActions = ({
   const { loadingPrinting } = useLoading();
 
   const { paymentMethod, spg } = useCurrentBill();
-  const { isOnline } = useOnlineSync();
 
   return (
     <View>
@@ -109,7 +107,7 @@ export const BillActions = ({
           {/* Save & Print Button */}
           <TouchableOpacity
             disabled={
-              !_id || isCalculating ||  loadingPrinting
+              !_id || !done || isCalculating || loadingPrinting
             }
             onPress={handleCetakHelper}
             className={`flex-1 rounded-lg py-2 px-4 shadow-md items-center justify-center flex-row gap-x-2 ${

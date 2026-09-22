@@ -112,17 +112,15 @@ export const useCurrentBill = create((set) => ({
   createCurrentBill: async (item) => {
     //untuk create bill pertama kali
     try {
-      // Format kodeInvoice: [outlet code][kasir code][YYMM]
+      // Format kodeInvoice: [outlet][kasir][YYMMDDHHmmss] — unik per detik
       const now = new Date();
-      const year = now.getFullYear().toString().slice(-2);
-      const month = (now.getMonth() + 1).toString().padStart(2, "0");
-      const yearMonth = year + month;
 
       // Get outlet and user info once
       let outletCode, kodeKasir, salesPerson;
 
       try {
-        // Get both values in parallel
+        // Prefer zustand (server session) — AsyncStorage sering tertinggal setelah ganti outlet
+        const zustandOutlet = useOutlet.getState()?.outlet;
         const [outletResult, userResult] = await Promise.all([
           AsyncStorage.getItem("outlet"),
           AsyncStorage.getItem("userInfo"),
@@ -131,9 +129,18 @@ export const useCurrentBill = create((set) => ({
         const outletStorage = outletResult ? JSON.parse(outletResult) : null;
         const userInfo = userResult ? JSON.parse(userResult) : null;
 
-        outletCode = outletStorage?.kodeOutlet;
+        outletCode =
+          zustandOutlet?.kodeOutlet || outletStorage?.kodeOutlet || null;
         kodeKasir = userInfo?.kodeKasir;
         salesPerson = userInfo?.username;
+
+        // Samakan AsyncStorage agar sync/cetak tidak pakai outlet lama
+        if (
+          zustandOutlet?.kodeOutlet &&
+          zustandOutlet.kodeOutlet !== outletStorage?.kodeOutlet
+        ) {
+          await AsyncStorage.setItem("outlet", JSON.stringify(zustandOutlet));
+        }
 
         const [year, month, date, hours, minutes, seconds] = [
           String(now.getFullYear()).slice(-2), // tahun 2 digit
@@ -164,8 +171,9 @@ export const useCurrentBill = create((set) => ({
           return;
         }
 
-        // Create formatted invoice code
-        const kodeInvoice = `${outletCode}${kodeKasir}${yearMonth}`;
+        // Unik per transaksi (index Mongo kodeInvoice unique).
+        // Format lama outlet+kasir+YYMM bentrok tiap bill di bulan yang sama.
+        const kodeInvoice = `${outletCode}${kodeKasir}${timestamp}`;
 
         // Set all state at once in a single update
         set({
@@ -419,6 +427,13 @@ export const useOutlet = create((set) => ({
   outlet: null,
   setOutlet: async (outlet) => {
     set({ outlet });
+    if (outlet) {
+      try {
+        await AsyncStorage.setItem("outlet", JSON.stringify(outlet));
+      } catch (e) {
+        console.error("Gagal menyimpan outlet ke AsyncStorage:", e);
+      }
+    }
   },
 }));
 

@@ -40,6 +40,9 @@ const Outlet = () => {
     description: "",
     mode: "",
     kasirList: [],
+    defaultNoSeries: "",
+    defaultSellToCustNo: "",
+    defaultSellToCustName: "",
   };
   const [newOutletForm, setNewOutletForm] = useState(initialNewOutletForm);
   const modalPickKasirRef = useRef();

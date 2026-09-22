@@ -5,7 +5,6 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  Button,
   ToastAndroid,
   Platform,
   ScrollView,

@@ -492,7 +492,18 @@ const Profile = () => {
                           key={id}
                           type="button"
                           disabled={isSwitching || active}
-                          onClick={() => handleSwitchOutlet(id)}
+                          onClick={() => {
+                            const nextName =
+                              outlet.namaOutlet || outlet.kodeOutlet || id;
+                            const prevName = getOutletLabel(profile.currentOutlet);
+                            const ok = window.confirm(
+                              `Pindah outlet dari "${prevName}" ke "${nextName}"?\n\n` +
+                                "Device mobile akun ini mungkin masih punya bill belum sync di outlet lama. " +
+                                "Setelah pindah, data lokal outlet lama di mobile akan dibuang saat online.\n\n" +
+                                "Sync dulu di mobile bila memungkinkan. Lanjutkan?",
+                            );
+                            if (ok) handleSwitchOutlet(id);
+                          }}
                           className={`w-full text-left px-3 py-2 rounded-xl border text-sm transition-colors ${
                             active
                               ? "border-blue-300 bg-blue-50 text-blue-800"

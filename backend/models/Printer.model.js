@@ -23,12 +23,6 @@ const PrinterSchema = new mongoose.Schema(
       default: "9100",
       trim: true,
     },
-    // Legacy alias untuk kompatibilitas data lama.
-    port: {
-      type: String,
-      default: "9100",
-      trim: true,
-    },
     isDefault: {
       type: Boolean,
       default: false,

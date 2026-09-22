@@ -35,9 +35,20 @@ export const createStatelessBillService = ({
     return outlet;
   };
 
-  const resolveSoapDefaults = (soapConfig) => ({
-    noSeries: soapConfig?.defaults?.noSeries || soapConfig?.noSeries || "",
-    sellToCustNo: soapConfig?.defaults?.sellToCustNo || "",
+  const resolveSoapDefaults = (soapConfig, outlet) => ({
+    noSeries:
+      soapConfig?.defaults?.noSeries ||
+      soapConfig?.noSeries ||
+      outlet?.defaultNoSeries ||
+      "",
+    sellToCustNo:
+      soapConfig?.defaults?.sellToCustNo ||
+      outlet?.defaultSellToCustNo ||
+      "",
+    sellToCustName:
+      soapConfig?.defaults?.sellToCustName ||
+      outlet?.defaultSellToCustName ||
+      "",
   });
 
   const buildWebPriceMap = async (outletId, currentBill = []) => {
@@ -109,6 +120,19 @@ export const createStatelessBillService = ({
       throw err;
     }
 
+    // Bill sisa outlet lama (setelah switch) tidak boleh di-ship ke NAV outlet aktif
+    const billOutletHint = String(bill._id).split("-")[0] || "";
+    const belongsToOutlet =
+      String(bill.kodeInvoice).startsWith(outlet.kodeOutlet) ||
+      billOutletHint === outlet.kodeOutlet;
+    if (!belongsToOutlet) {
+      const err = new Error(
+        `Bill ini milik outlet lain (${billOutletHint || bill.kodeInvoice}), sedangkan outlet aktif Anda ${outlet.kodeOutlet}. Buat bill baru / Clear sale dulu.`,
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+
     const existing = await findInvoiceById(bill._id);
     if (existing?.done) {
       const err = new Error("Bill sudah lunas, tidak bisa cetak ulang via ship");
@@ -161,12 +185,17 @@ export const createStatelessBillService = ({
       throw err;
     }
 
-    const defaults = resolveSoapDefaults(soapConfig);
+    const defaults = resolveSoapDefaults(soapConfig, outlet);
+    const customerName =
+      bill.customer?.name ||
+      (typeof bill.customer === "string" ? bill.customer : "") ||
+      defaults.sellToCustName ||
+      "";
     const payload = mapInvoiceToSalesOrderPayload(
       {
         ...normalized,
         documentNo: existing?.navDocumentNo || bill.documentNo || bill._id,
-        customer: { name: bill.customer?.name || bill.customer || "" },
+        customer: { name: customerName },
         createdAt: bill.createdAt || existing?.createdAt || new Date(),
       },
       defaults,

@@ -98,6 +98,65 @@ export default function ModalRegisterOutlet({
                 </select>
               </div>
 
+              {newOutletForm?.mode === "stateless" && (
+                <div className="rounded-lg border border-purple-200 bg-purple-50/50 p-4 space-y-3">
+                  <p className="text-sm font-semibold text-purple-900">
+                    Default NAV (bisa dilengkapi SOAP di edit outlet)
+                  </p>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      No Series
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full border px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                      value={newOutletForm?.defaultNoSeries || ""}
+                      onChange={(e) =>
+                        setNewOutletForm({
+                          ...newOutletForm,
+                          defaultNoSeries: e.target.value,
+                        })
+                      }
+                      placeholder="Contoh: SO-MG2"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Default Customer No (Sell-to)
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full border px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                      value={newOutletForm?.defaultSellToCustNo || ""}
+                      onChange={(e) =>
+                        setNewOutletForm({
+                          ...newOutletForm,
+                          defaultSellToCustNo: e.target.value,
+                        })
+                      }
+                      placeholder="Contoh: 112183"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Default Customer Name
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full border px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                      value={newOutletForm?.defaultSellToCustName || ""}
+                      onChange={(e) =>
+                        setNewOutletForm({
+                          ...newOutletForm,
+                          defaultSellToCustName: e.target.value,
+                        })
+                      }
+                      placeholder="Contoh: CASH RETAIL MANGGA 2"
+                    />
+                  </div>
+                </div>
+              )}
+
               {/* Nama Outlet */}
               <div>
                 <label className="block font-semibold text-gray-700">
