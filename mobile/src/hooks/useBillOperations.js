@@ -12,7 +12,7 @@ import {
   getOuletByUserId,
 } from "../api";
 import excactTimeString from "../utils/excactTimeString";
-import { useLoading, useOutlet, useSyncSetting, useCurrentBill } from "../store";
+import { useLoading, useOutlet, useSyncSetting, useCurrentBill, useLiveStockRevision } from "../store";
 import { useOnlineSync } from "./useOnlineSync";
 import { MODE_OUTLET, resolveBillCustomer } from "../constant";
 import {
@@ -510,7 +510,11 @@ export const useBillOperations = ({
         }
       }
 
-      const transaction = await createMidtransPayment(_id, billSnapshot);
+      const transaction = await createMidtransPayment(
+        _id,
+        billSnapshot,
+        outlet?._id || null,
+      );
       if (!transaction?.redirectUrl)
         throw new Error("URL pembayaran Midtrans tidak tersedia");
 
@@ -655,7 +659,7 @@ export const useBillOperations = ({
       const billsToSave = JSON.stringify(bills);
       await AsyncStorage.setItem("bills", billsToSave);
 
-      ToastAndroid?.show("Bill tersimpan berhasil", ToastAndroid.SHORT);
+      ToastAndroid?.show("Bill Berhasil disimpan", ToastAndroid.SHORT);
       return true;
     } catch (error) {
       console.error("Error menyimpan bill:", error);
@@ -781,7 +785,11 @@ export const useBillOperations = ({
 
       // --- outlet.mode === "stateless": NAV ship (or pending discount) ---
       // offline mode keeps the existing local-only path below.
-      if (outlet?.mode === "stateless") {
+      // Sudah ter-ship & belum di-undo → cukup cetak ulang; ship lagi = SO dobel & stok NAV terpotong dua kali
+      const alreadyShipped = Boolean(
+        useCurrentBill.getState().isPrintedCustomerBilling,
+      );
+      if (outlet?.mode === "stateless" && !alreadyShipped) {
         if (!isOnline) {
           Alert.alert(
             "Offline",
@@ -792,24 +800,27 @@ export const useBillOperations = ({
         }
 
         try {
-          const navResult = await cetakBillStateless({
-            _id: billId,
-            kodeInvoice: billKodeInvoice,
-            currentBill,
-            diskon,
-            promo,
-            futureVoucher,
-            implementedVoucher,
-            subTotal: cebelumDiskon,
-            total: setelahDiskon,
-            salesPerson,
-            spg,
-            customer,
-            paymentMethod,
-            nomorTransaksi,
-            tanggalBayar,
-            createdAt: new Date().toISOString(),
-          });
+          const navResult = await cetakBillStateless(
+            {
+              _id: billId,
+              kodeInvoice: billKodeInvoice,
+              currentBill,
+              diskon,
+              promo,
+              futureVoucher,
+              implementedVoucher,
+              subTotal: cebelumDiskon,
+              total: setelahDiskon,
+              salesPerson,
+              spg,
+              customer,
+              paymentMethod,
+              nomorTransaksi,
+              tanggalBayar,
+              createdAt: new Date().toISOString(),
+            },
+            outlet?._id || null,
+          );
 
           if (navResult?.action === "pending_discount_approval") {
             await handleSimpanBillOffline({
@@ -843,6 +854,9 @@ export const useBillOperations = ({
             setLoadingPrinting(false);
             return;
           }
+
+          // Ship OK → stok NAV berubah; Libraries harus refetch (no cache)
+          useLiveStockRevision.getState().bumpLiveStock();
         } catch (error) {
           const msg =
             error?.response?.data?.message ||
@@ -1147,6 +1161,7 @@ export const useBillOperations = ({
                 paymentMethod,
                 nomorTransaksi: paymentReference || nomorTransaksi,
                 tanggalBayar: tanggalBayar || new Date().toISOString(),
+                outletId: outlet?._id || null,
               });
             } catch (navErr) {
               const msg =
@@ -1553,6 +1568,9 @@ export const useBillOperations = ({
   // Tambahkan fungsi untuk mengelola inventaris dan statistik
   const updateInventoryAndStats = async () => {
     /**
+     * Offline mode only. Stateless: stok live di NAV (ship/post) —
+     * app tidak boleh kurangi quantity inventaris lokal.
+     *
      * input: cosmos 007 pundi 1x (tested ✅)
      *diskon[diskon].quantityTersedia = 80 (-1) ✅
      *promo[promo].quantityBerlaku = 8 (-1) ✅
@@ -1567,6 +1585,10 @@ export const useBillOperations = ({
      *outlet.pendapatanFromApp = 237160 (+total) ✅
      *outlet.jumlahInvoice = do not change ✅
      */
+    if (outlet?.mode === "stateless" || outlet?.mode === MODE_OUTLET.stateless) {
+      return true;
+    }
+
     try {
       let updateStatus = {
         inventories: false,

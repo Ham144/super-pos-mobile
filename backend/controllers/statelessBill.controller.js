@@ -129,8 +129,10 @@ export const editLinesStateless = async (req, res) => {
     });
     return res.status(200).json({ message: "sukses", ...result });
   } catch (error) {
+    console.error("stateless undo gagal:", error?.message || error);
     return res.status(error.statusCode || 500).json({
       message: error.message,
+      partialUndone: error.partialUndone || [],
     });
   }
 };
@@ -170,8 +172,10 @@ export const voidStateless = async (req, res) => {
     });
     return res.status(200).json({ message: "sukses", ...result });
   } catch (error) {
+    console.error("stateless undo gagal:", error?.message || error);
     return res.status(error.statusCode || 500).json({
       message: error.message,
+      partialUndone: error.partialUndone || [],
     });
   }
 };

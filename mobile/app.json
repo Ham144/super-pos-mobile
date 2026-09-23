@@ -1,8 +1,7 @@
 {
   "expo": {
     "platforms": [
-      "android",
-      "web"
+      "android"
     ],
     "userInterfaceStyle": "light",
     "orientation": "landscape",
@@ -24,7 +23,7 @@
         "android.permission.READ_EXTERNAL_STORAGE"
       ],
       "runtimeVersion": "1.0.0",
-      "package": "com.csi.pos.internal"
+      "package": "com.csi.superpos"
     },
     "plugins": [
       "expo-router",
@@ -41,15 +40,24 @@
         }
       ]
     ],
-    "name": "CSI POS",
-    "slug": "csi-pos-internal",
+    "name": "CSI SUPER POS",
+    "slug": "csi-super-pos",
     "newArchEnabled": true,
     "extra": {
       "router": {
         "origin": false
       },
       "eas": {
-        "projectId": "034c2941-68f2-40e7-8423-f733b7c30728"
+        "projectId": "7014e338-1340-4ef9-9bc1-5e464f3a3107"
+      }
+    },
+    "updates": {
+      "enabled": true,
+      "url": "https://u.expo.dev/7014e338-1340-4ef9-9bc1-5e464f3a3107",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0,
+      "requestHeaders": {
+        "expo-channel-name": "production"
       }
     },
     "runtimeVersion": "1.0.0",

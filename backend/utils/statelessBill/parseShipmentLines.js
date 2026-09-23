@@ -20,16 +20,22 @@ export const parseSalesShipmentLines = (xmlOrEncoded) => {
     xml = decodeXmlEntities(xml);
   }
 
-  const returnValue = extractXmlTagValue(xml, "return_value");
-  if (returnValue) {
-    xml = returnValue.includes("&lt;")
-      ? decodeXmlEntities(returnValue)
-      : returnValue;
-  }
+  const findBlocks = (source) =>
+    source.match(
+      /<(?:\w+:)?SalesShipmentLines\b[\s\S]*?<\/(?:\w+:)?SalesShipmentLines>/gi,
+    );
 
-  const blocks = xml.match(
-    /<(?:\w+:)?SalesShipmentLines\b[\s\S]*?<\/(?:\w+:)?SalesShipmentLines>/gi,
-  );
+  let blocks = findBlocks(xml);
+  if (!blocks?.length) {
+    const returnValue = extractXmlTagValue(xml, "return_value");
+    if (returnValue) {
+      blocks = findBlocks(
+        returnValue.includes("&lt;")
+          ? decodeXmlEntities(returnValue)
+          : returnValue,
+      );
+    }
+  }
   if (!blocks?.length) return [];
 
   return blocks

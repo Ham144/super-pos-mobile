@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-// export const environment = "production";
-export const environment = "development";
+export const environment = "production";
+// export const environment = "development";
 
 export const BACKEND_URLS = {
   production: "https://pos.mycsi.net",

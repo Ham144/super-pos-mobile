@@ -120,14 +120,16 @@ export const createStatelessBillService = ({
       throw err;
     }
 
-    // Bill sisa outlet lama (setelah switch) tidak boleh di-ship ke NAV outlet aktif
-    const billOutletHint = String(bill._id).split("-")[0] || "";
+    // Bill sisa outlet lama (setelah switch) tidak boleh di-ship ke NAV outlet aktif.
+    // Pakai prefix `_id` + `-` (sama mobile) — split("-")[0] salah kalau kodeOutlet punya `_`.
+    const kode = String(outlet.kodeOutlet || "");
+    const billId = String(bill._id || "");
     const belongsToOutlet =
-      String(bill.kodeInvoice).startsWith(outlet.kodeOutlet) ||
-      billOutletHint === outlet.kodeOutlet;
+      (kode && billId.startsWith(`${kode}-`)) ||
+      String(bill.kodeInvoice || "").startsWith(kode);
     if (!belongsToOutlet) {
       const err = new Error(
-        `Bill ini milik outlet lain (${billOutletHint || bill.kodeInvoice}), sedangkan outlet aktif Anda ${outlet.kodeOutlet}. Buat bill baru / Clear sale dulu.`,
+        `Bill ini milik outlet lain (${billId || bill.kodeInvoice}), sedangkan outlet aktif Anda ${outlet.kodeOutlet}. Buat bill baru / Clear sale dulu.`,
       );
       err.statusCode = 400;
       throw err;
@@ -143,6 +145,19 @@ export const createStatelessBillService = ({
       const err = new Error("Bill sudah di-void");
       err.statusCode = 400;
       throw err;
+    }
+    // isPrintedCustomerBilling di-reset false oleh editOrRemoveLines setelah undo
+    if (
+      (existing?.navShipmentNo || existing?.navShipReturnValue) &&
+      existing?.isPrintedCustomerBilling
+    ) {
+      return {
+        action: "already_shipped",
+        message:
+          "Bill sudah ter-ship ke NAV dan belum di-undo; SalesOrderAutoPostingShip tidak dikirim ulang.",
+        invoice: existing,
+        soap: null,
+      };
     }
 
     const webPriceBySku = await buildWebPriceMap(outletId, bill.currentBill);
@@ -185,6 +200,49 @@ export const createStatelessBillService = ({
       throw err;
     }
 
+    // Cetak ulang setelah sudah pernah ship: kirim hanya SKU yang belum punya line aktif
+    // di NAV (item baru / SKU yang sudah di-undo). Kirim ulang semua = stok NAV terpotong dobel.
+    const previousShipments = shipmentsOf(existing);
+    let linesToShip = normalized.currentBill;
+    if (previousShipments.length) {
+      const activeLines = activeShipmentLines(
+        await getInvoiceShipmentLines({ outletId, invoice: existing }),
+      );
+      const navQty = sumQtyBySku(activeLines, (l) => l.itemNo, (l) => l.qty);
+      const billQty = sumQtyBySku(
+        normalized.currentBill,
+        (l) => l.sku,
+        (l) => l.quantity,
+      );
+      const outOfSync = Object.keys(navQty).filter(
+        (sku) => (billQty[sku] || 0) !== navQty[sku],
+      );
+      if (outOfSync.length) {
+        const err = new Error(
+          `Qty di NAV berbeda dengan bill untuk SKU: ${outOfSync.join(", ")}. Undo shipment SKU tersebut dulu sebelum cetak ulang.`,
+        );
+        err.statusCode = 409;
+        throw err;
+      }
+      linesToShip = normalized.currentBill.filter(
+        (l) => !navQty[normSku(l.sku)],
+      );
+      if (!linesToShip.length) {
+        const saved = await upsertInvoice({
+          ...existing,
+          ...normalized,
+          isPrintedCustomerBilling: true,
+          done: false,
+        });
+        return {
+          action: "already_shipped",
+          message: "Semua item sudah ter-ship di NAV; hanya cetak ulang.",
+          invoice: saved,
+          soap: null,
+        };
+      }
+    }
+
     const defaults = resolveSoapDefaults(soapConfig, outlet);
     const customerName =
       bill.customer?.name ||
@@ -194,6 +252,7 @@ export const createStatelessBillService = ({
     const payload = mapInvoiceToSalesOrderPayload(
       {
         ...normalized,
+        currentBill: linesToShip,
         documentNo: existing?.navDocumentNo || bill.documentNo || bill._id,
         customer: { name: customerName },
         createdAt: bill.createdAt || existing?.createdAt || new Date(),
@@ -209,6 +268,10 @@ export const createStatelessBillService = ({
     });
 
     const returnValue = soapResult?.parsed?.returnValue || "";
+    // return_value: "<No. Sales Order>;<No. Sales Shipment>", mis. "SO/RTL-26/09/00020;SS/RTL-26/09/00020"
+    const [navSalesOrderNo, navShipmentNo] = String(returnValue)
+      .split(";")
+      .map((part) => part.trim());
     const warehouseReady =
       String(returnValue).toLowerCase().includes("ready") ||
       String(returnValue) === "1" ||
@@ -224,6 +287,21 @@ export const createStatelessBillService = ({
           ? DISCOUNT_APPROVAL_STATUS.APPROVED
           : DISCOUNT_APPROVAL_STATUS.NONE,
       navDocumentNo: payload.header.documentNo,
+      navSalesOrderNo: navSalesOrderNo || existing?.navSalesOrderNo || null,
+      navShipmentNo: navShipmentNo || existing?.navShipmentNo || null,
+      navShipments: [
+        ...previousShipments,
+        ...(navShipmentNo
+          ? [
+              {
+                salesOrderNo: navSalesOrderNo || null,
+                shipmentNo: navShipmentNo,
+                returnValue: returnValue || null,
+                shippedAt: new Date(),
+              },
+            ]
+          : []),
+      ],
       warehouseReady,
       navShipAt: new Date(),
       navShipReturnValue: returnValue || null,
@@ -268,6 +346,37 @@ export const createStatelessBillService = ({
     return { invoice: saved };
   };
 
+  const normSku = (s) => String(s ?? "").trim().toUpperCase();
+  const toNum = (v) => Number(String(v?.$numberDecimal ?? v ?? ""));
+  const sumQtyBySku = (lines, skuOf, qtyOf) => {
+    const map = {};
+    for (const line of lines || []) {
+      const sku = normSku(skuOf(line));
+      if (!sku) continue;
+      map[sku] = (map[sku] || 0) + (Number(qtyOf(line)) || 0);
+    }
+    return map;
+  };
+
+  // Tiap SalesOrderAutoPostingShip menghasilkan SO & SS baru (cetak ulang setelah
+  // tambah item = shipment ke-2, dst). Invoice lama hanya punya navShipmentNo/navShipReturnValue.
+  const shipmentsOf = (invoice) => {
+    const list = [...(invoice?.navShipments || [])];
+    const [legacySo, legacySs] = String(invoice?.navShipReturnValue || "")
+      .split(";")
+      .map((p) => p.trim());
+    const legacyShipmentNo = invoice?.navShipmentNo || legacySs;
+    if (legacyShipmentNo && !list.some((s) => s.shipmentNo === legacyShipmentNo)) {
+      list.unshift({
+        salesOrderNo: invoice?.navSalesOrderNo || legacySo || null,
+        shipmentNo: legacyShipmentNo,
+        returnValue: invoice?.navShipReturnValue || null,
+        shippedAt: invoice?.navShipAt || null,
+      });
+    }
+    return list.filter((s) => s?.shipmentNo);
+  };
+
   const getShipmentLines = async ({ outletId, documentNo }) => {
     const soapResult = await executeNavSoap({
       outletId,
@@ -275,30 +384,107 @@ export const createStatelessBillService = ({
       payload: { codDocNumber: documentNo },
     });
 
-    const lines = parseSalesShipmentLines(
-      soapResult?.parsed?.returnValue || soapResult?.response?.body,
-    );
+    // Baris ada di <xML_SSL> body response; return_value hanya fallback
+    let lines = parseSalesShipmentLines(soapResult?.response?.body);
+    if (!lines.length && soapResult?.parsed?.returnValue) {
+      lines = parseSalesShipmentLines(soapResult.parsed.returnValue);
+    }
 
     return { soapResult, lines };
   };
 
-  const undoShipmentLines = async ({ outletId, lines }) => {
+  // GetSalesShipmentLines butuh No. Sales Shipment dari NAV (SS/...), bukan DocumentNo yang kita kirim
+  const getInvoiceShipmentLines = async ({ outletId, invoice }) => {
+    const shipments = shipmentsOf(invoice);
+    if (!shipments.length) {
+      const err = new Error(
+        "No. Sales Shipment NAV tidak ada di invoice (return_value SalesOrderAutoPostingShip kosong). Tidak bisa undo shipment.",
+      );
+      err.statusCode = 409;
+      throw err;
+    }
+    const lines = [];
+    for (const shipment of shipments) {
+      const fetched = await getShipmentLines({
+        outletId,
+        documentNo: shipment.shipmentNo,
+      });
+      lines.push(...fetched.lines);
+    }
+    return lines;
+  };
+
+  const lineKey = (line) => `${line?.documentNo}:${line?.lineNo}`;
+
+  // Setelah WsUndoShipment, NAV tidak menghapus line asli tapi menambah line koreksi
+  // (Qty negatif, LineNo baru) di shipment yang sama. Line asli yang sudah punya
+  // pasangan koreksi dan line koreksi itu sendiri tidak bisa di-undo lagi.
+  const activeShipmentLines = (lines = []) => {
+    const sorted = [...lines].sort((a, b) => a.lineNo - b.lineNo);
+    const cancelled = new Set();
+    for (const neg of sorted) {
+      if (!(neg.qty < 0)) continue;
+      const original = sorted
+        .filter(
+          (pos) =>
+            pos.lineNo < neg.lineNo &&
+            pos.qty === -neg.qty &&
+            pos.itemNo === neg.itemNo &&
+            pos.documentNo === neg.documentNo &&
+            !cancelled.has(lineKey(pos)),
+        )
+        .pop();
+      if (original) cancelled.add(lineKey(original));
+    }
+    return sorted.filter(
+      (line) => line.qty > 0 && !cancelled.has(lineKey(line)),
+    );
+  };
+
+  const undoShipmentLines = async ({ outletId, lines, alreadyUndone = [] }) => {
+    const skipKeys = new Set((alreadyUndone || []).map(lineKey));
     const results = [];
     for (const line of lines || []) {
       if (!line?.documentNo || line.lineNo == null) continue;
-      const soapResult = await executeNavSoap({
-        outletId,
-        operationKey: NAV_SOAP_OPERATIONS.WS_UNDO_SHIPMENT,
-        payload: {
-          docNo: line.documentNo,
-          lineNo: line.lineNo,
-        },
-      });
+      if (skipKeys.has(lineKey(line))) continue;
+      const fail = (reason) => {
+        const err = new Error(
+          `WsUndoShipment gagal untuk ${line.itemNo} (line ${line.lineNo}): ${reason}`,
+        );
+        err.statusCode = 502;
+        err.undone = results;
+        return err;
+      };
+
+      let soapResult;
+      try {
+        soapResult = await executeNavSoap({
+          outletId,
+          operationKey: NAV_SOAP_OPERATIONS.WS_UNDO_SHIPMENT,
+          payload: {
+            docNo: line.documentNo,
+            lineNo: line.lineNo,
+          },
+        });
+      } catch (error) {
+        throw fail(error.message);
+      }
+
+      // Sukses: return_value "<DocNo>;<LineNo>;<ItemNo>;<Qty>", mis. "SS/RTL-26/09/00020;20000;BL151GF;1"
+      const returnValue = String(soapResult?.parsed?.returnValue || "").trim();
+      const [retDocNo, retLineNo] = returnValue.split(";").map((p) => p.trim());
+      if (
+        retDocNo !== String(line.documentNo).trim() ||
+        Number(retLineNo) !== Number(line.lineNo)
+      ) {
+        throw fail(`return_value tidak sesuai: "${returnValue || "(kosong)"}"`);
+      }
+
       results.push({
         documentNo: line.documentNo,
         lineNo: line.lineNo,
         itemNo: line.itemNo,
-        returnValue: soapResult?.parsed?.returnValue,
+        returnValue,
       });
     }
     return results;
@@ -334,55 +520,11 @@ export const createStatelessBillService = ({
       throw err;
     }
 
-    const { lines: shipmentLines } = await getShipmentLines({
+    const shipmentLines = await getInvoiceShipmentLines({
       outletId,
-      documentNo: existing.navDocumentNo,
+      invoice: existing,
     });
-
-    const skusToUndo = new Set(
-      [
-        ...removeSkus,
-        ...(currentBill || [])
-          .filter((l) => l.priceEdited || l.quantityChanged)
-          .map((l) => l.sku),
-      ].filter(Boolean),
-    );
-
-    // If caller only passed a new bill snapshot, undo SKUs that changed vs existing
-    if (!skusToUndo.size && Array.isArray(currentBill)) {
-      for (const oldLine of existing.currentBill || []) {
-        const next = currentBill.find((l) => l.sku === oldLine.sku);
-        if (
-          !next ||
-          Number(next.quantity) !== Number(oldLine.quantity) ||
-          Number(next.RpHargaDasar) !== Number(oldLine.RpHargaDasar)
-        ) {
-          skusToUndo.add(oldLine.sku);
-        }
-      }
-      for (const next of currentBill) {
-        if (!(existing.currentBill || []).some((l) => l.sku === next.sku)) {
-          // new sku — no shipment line yet
-        }
-      }
-    }
-
-    const linesToUndo = shipmentLines.filter((line) =>
-      skusToUndo.has(line.itemNo),
-    );
-
-    // If removeSkus empty and no specific edits detected but caller wants full refresh:
-    const undoTargets =
-      linesToUndo.length > 0
-        ? linesToUndo
-        : skusToUndo.size === 0
-          ? []
-          : shipmentLines.filter((l) => skusToUndo.has(l.itemNo));
-
-    const undoResults = await undoShipmentLines({
-      outletId,
-      lines: undoTargets,
-    });
+    const activeLines = activeShipmentLines(shipmentLines);
 
     const nextBill =
       currentBill != null
@@ -391,12 +533,60 @@ export const createStatelessBillService = ({
             (l) => !removeSkus.includes(l.sku),
           );
 
+    // Undo hanya SKU yang masih aktif di NAV lalu dihapus / qty berubah / harga berubah.
+    // SKU baru (belum ada line di NAV) tidak perlu undo — cukup ikut cetak ulang.
+    const navQty = sumQtyBySku(activeLines, (l) => l.itemNo, (l) => l.qty);
+    const billQty = sumQtyBySku(nextBill, (l) => l.sku, (l) => l.quantity);
+    const removeSet = new Set(removeSkus.map(normSku));
+    const priceOf = (bill, sku) =>
+      toNum((bill || []).find((l) => normSku(l.sku) === sku)?.RpHargaDasar);
+    const priceChanged = (sku) => {
+      const before = priceOf(existing.currentBill, sku);
+      const after = priceOf(nextBill, sku);
+      return Number.isFinite(before) && Number.isFinite(after) && before !== after;
+    };
+    const skusToUndo = new Set(
+      Object.keys(navQty).filter(
+        (sku) =>
+          removeSet.has(sku) ||
+          (billQty[sku] || 0) !== navQty[sku] ||
+          priceChanged(sku),
+      ),
+    );
+
+    const undoTargets = activeLines.filter((line) =>
+      skusToUndo.has(normSku(line.itemNo)),
+    );
+
+    let undoResults;
+    try {
+      undoResults = await undoShipmentLines({
+        outletId,
+        lines: undoTargets,
+        alreadyUndone: existing.navUndoneLines,
+      });
+    } catch (error) {
+      // Line yang sempat ter-undo sebelum gagal tetap dicatat supaya tidak di-undo dua kali
+      if (error.undone?.length) {
+        await upsertInvoice({
+          ...existing,
+          navUndoneLines: [...(existing.navUndoneLines || []), ...error.undone],
+          navUndoAt: new Date(),
+          warehouseReady: false,
+          isPrintedCustomerBilling: false,
+        });
+      }
+      error.partialUndone = error.undone || [];
+      throw error;
+    }
+
     const saved = await upsertInvoice({
       ...existing,
       currentBill: nextBill,
       diskon: diskon != null ? diskon : existing.diskon,
       warehouseReady: false,
       navShipmentLines: shipmentLines,
+      navUndoneLines: [...(existing.navUndoneLines || []), ...undoResults],
       navUndoAt: new Date(),
       isPrintedCustomerBilling: false,
     });
@@ -505,15 +695,32 @@ export const createStatelessBillService = ({
     let shipmentLines = existing.navShipmentLines || [];
 
     if (existing.navDocumentNo) {
-      const fetched = await getShipmentLines({
+      shipmentLines = await getInvoiceShipmentLines({
         outletId,
-        documentNo: existing.navDocumentNo,
+        invoice: existing,
       });
-      shipmentLines = fetched.lines;
-      undone = await undoShipmentLines({
-        outletId,
-        lines: shipmentLines,
-      });
+      try {
+        undone = await undoShipmentLines({
+          outletId,
+          lines: activeShipmentLines(shipmentLines),
+          alreadyUndone: existing.navUndoneLines,
+        });
+      } catch (error) {
+        if (error.undone?.length) {
+          await upsertInvoice({
+            ...existing,
+            navShipmentLines: shipmentLines,
+            navUndoneLines: [
+              ...(existing.navUndoneLines || []),
+              ...error.undone,
+            ],
+            navUndoAt: new Date(),
+            warehouseReady: false,
+          });
+        }
+        error.partialUndone = error.undone || [];
+        throw error;
+      }
     }
 
     const saved = await upsertInvoice({

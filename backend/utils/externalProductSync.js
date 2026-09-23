@@ -83,44 +83,54 @@ export const fetchAllExternalProducts = async ({
     headers["x-api-key"] = x_api_key;
   }
 
-  const products = [];
-  let skip = 0;
-  let reportedTotal = null;
-  const limit = Math.max(1, Number(pageLimit) || 1000);
-
-  while (true) {
-    const pageParams = {
-      skip,
-      limit,
-    };
+  const fetchPage = async (skip, limit) => {
+    const pageParams = { skip, limit };
     // kosong = katalog penuh; jangan biarkan searchKey lama menempel di URL
     if (searchKey) {
       pageParams.searchKey = searchKey;
     }
-
-    const pageUrl = appendQueryParams(url, pageParams);
-    const response = await axios.get(pageUrl, {
+    const response = await axios.get(appendQueryParams(url, pageParams), {
       headers,
       timeout: timeoutMs,
     });
+    return {
+      items: extractProductList(response.data),
+      total:
+        typeof response.data?.total === "number" ? response.data.total : null,
+    };
+  };
 
-    const pageItems = extractProductList(response.data);
-    if (typeof response.data?.total === "number") {
-      reportedTotal = response.data.total;
+  const productsBySku = new Map();
+  const collect = (items) => {
+    for (const item of items) {
+      const key = String(item?.No ?? item?.no ?? item?.SKU ?? item?.sku ?? "").trim();
+      if (key && !productsBySku.has(key)) productsBySku.set(key, item);
     }
+  };
 
-    if (!pageItems.length) break;
+  const limit = Math.max(1, Number(pageLimit) || 1000);
+  const first = await fetchPage(0, limit);
+  collect(first.items);
 
-    products.push(...pageItems);
-
-    if (pageItems.length < limit) break;
-    if (reportedTotal != null && products.length >= reportedTotal) break;
-
-    skip += limit;
-    if (skip > 200000) break;
+  // Paging skip/limit di API sumber tidak stabil (urutan acak antar halaman →
+  // duplikat & SKU hilang). Jika total > 1 halaman, ambil sekaligus limit=total.
+  if (first.total != null && first.total > first.items.length) {
+    const full = await fetchPage(0, first.total);
+    collect(full.items);
   }
-  
-  return products;
+
+  if (first.total == null && first.items.length >= limit) {
+    let skip = limit;
+    while (skip <= 200000) {
+      const page = await fetchPage(skip, limit);
+      if (!page.items.length) break;
+      collect(page.items);
+      if (page.items.length < limit) break;
+      skip += limit;
+    }
+  }
+
+  return [...productsBySku.values()];
 };
 
 const toDecimal128 = (value) =>

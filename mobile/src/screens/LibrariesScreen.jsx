@@ -6,10 +6,18 @@ import {
   ToastAndroid,
   FlatList,
   ActivityIndicator,
+  RefreshControl,
+  AppState,
 } from "react-native";
 import RegisterInvoice from "../components/RegisterInvoice";
 import { Plus } from "lucide-react-native";
-import { useCurrentBill, useInventoriesOffline, useLoading, useOutlet } from "../store";
+import {
+  useCurrentBill,
+  useInventoriesOffline,
+  useLoading,
+  useOutlet,
+  useLiveStockRevision,
+} from "../store";
 import OptionInventoriesModal from "../components/OptionInventoriesModal";
 import FilterInventories from "../components/FilterInventories";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -18,8 +26,11 @@ import {
   loadRemovedInventorySkus,
 } from "../utils/inventoryFilters";
 import { getAllInventoriesOnlineInitial } from "../api";
+import { MODE_OUTLET } from "../constant";
 
 const PAGE_LIMIT = 50;
+/** Poll halaman yang sedang terlihat — bukan dump katalog penuh. */
+const LIVE_STOCK_POLL_MS = 30_000;
 
 const LibrariesScreen = () => {
   const [showfilterModal, setshowFilterModal] = useState(false);
@@ -27,8 +38,8 @@ const LibrariesScreen = () => {
   const [selectedItem, setSelectedItem] = useState();
   const [favoritedInventorySkus, setFavoritedInventorySkus] = useState([]);
   const { setLoadingPrinting } = useLoading();
-  const [outletMode, setOutletMode] = useState(null); // "stateless" | "offline" | null
   const [isLoadingLive, setIsLoadingLive] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [livePage, setLivePage] = useState(1);
   const [liveHasMore, setLiveHasMore] = useState(true);
 
@@ -46,19 +57,25 @@ const LibrariesScreen = () => {
   const { inventoriesOffline: inventoriList, setInventoriesOffline } =
     useInventoriesOffline();
   const { outlet } = useOutlet();
+  const liveStockRevision = useLiveStockRevision((s) => s.revision);
 
   const [filteredInventories, setFilteredInventories] = useState([]);
   const searchTimeout = useRef(null);
   const [lastUpdateTimestamp, setLastUpdateTimestamp] = useState("");
   const intervalIdRef = useRef(null);
-  const isStateless = outletMode === "stateless";
+  const livePollRef = useRef(null);
+  const filterRef = useRef(filter);
+  filterRef.current = filter;
+
+  // Prefer outlet store — jangan default ke offline sebelum mode ketahuan
+  const isStateless = outlet?.mode === MODE_OUTLET.stateless;
 
   const normalizeInventories = (list = []) =>
     Array.from(
       new Map(
         (list || [])
           .filter((item) => item?.isDisabled !== true)
-          .map((item) => [item._id || item.sku, item]),
+          .map((item) => [item.sku || item._id, item]),
       ).values(),
     );
 
@@ -66,6 +83,10 @@ const LibrariesScreen = () => {
     async ({ page = 1, append = false, searchKey = "" } = {}) => {
       setIsLoadingLive(true);
       try {
+        // Stateless: buang cache inventori lokal — stok selalu dari API+NAV
+        await AsyncStorage.removeItem("inventories");
+        useInventoriesOffline.setState({ inventoriesOffline: [] });
+
         const response = await getAllInventoriesOnlineInitial(
           page,
           PAGE_LIMIT,
@@ -90,10 +111,19 @@ const LibrariesScreen = () => {
         );
       } finally {
         setIsLoadingLive(false);
+        setRefreshing(false);
       }
     },
     [],
   );
+
+  const refreshLivePage = useCallback(() => {
+    fetchLiveInventories({
+      page: 1,
+      append: false,
+      searchKey: filterRef.current.searchKey || "",
+    });
+  }, [fetchLiveInventories]);
 
   const checkInventoryUpdates = async () => {
     if (isStateless) return;
@@ -157,31 +187,24 @@ const LibrariesScreen = () => {
     handleSearchOffline();
   };
 
+  // Bootstrap: stateless = live only; offline = AsyncStorage dump
   useEffect(() => {
     const bootstrap = async () => {
       const lastUpdate = await AsyncStorage.getItem("lastInventoryUpdate");
       const userInfoRaw = await AsyncStorage.getItem("userInfo");
       const favoritedRaw = await AsyncStorage.getItem("favoritedInventorySkus");
-      const outletRaw = await AsyncStorage.getItem("outlet");
 
       setFavoritedInventorySkus(favoritedRaw ? JSON.parse(favoritedRaw) : []);
       setLastUpdateTimestamp(lastUpdate || "");
       setUserInfo(userInfoRaw ? JSON.parse(userInfoRaw) : null);
 
-      let mode = outlet?.mode || null;
-      if (!mode) {
-        try {
-          mode = outletRaw ? JSON.parse(outletRaw)?.mode : null;
-        } catch (_) {
-          mode = null;
-        }
-      }
-      setOutletMode(mode || "offline");
-
-      if (mode === "stateless") {
+      if (outlet?.mode === MODE_OUTLET.stateless) {
+        setFilteredInventories([]);
         await fetchLiveInventories({ page: 1, append: false, searchKey: "" });
         return;
       }
+
+      if (!outlet?.mode) return;
 
       const storedInventories = JSON.parse(
         await AsyncStorage.getItem("inventories"),
@@ -199,25 +222,51 @@ const LibrariesScreen = () => {
     bootstrap();
   }, [fetchLiveInventories, setInventoriesOffline, outlet?._id, outlet?.mode]);
 
+  // Offline-only: poll AsyncStorage dump
   useEffect(() => {
-    if (isStateless) return;
+    if (isStateless || !outlet?.mode) return;
 
     checkInventoryUpdates();
     intervalIdRef.current = setInterval(checkInventoryUpdates, 10000);
     return () => {
       if (intervalIdRef.current) clearInterval(intervalIdRef.current);
     };
-  }, [filter.searchKey, isStateless, lastUpdateTimestamp]);
+  }, [filter.searchKey, isStateless, lastUpdateTimestamp, outlet?.mode]);
 
+  // Offline search against dump — JANGAN jalankan di stateless (bisa timpa qty NAV dengan cache)
   useEffect(() => {
-    if (isStateless) {
-      handleSearch();
-      return;
-    }
+    if (isStateless || !outlet?.mode) return;
     if (inventoriList) {
       handleSearchOffline();
     }
-  }, [inventoriList, filter.searchKey, isStateless]);
+  }, [inventoriList, filter.searchKey, isStateless, outlet?.mode]);
+
+  // Stateless search → live API
+  useEffect(() => {
+    if (!isStateless) return;
+    handleSearch();
+  }, [filter.searchKey, isStateless]);
+
+  // Stateless: refetch setelah cetak/ship (bukan mount awal — itu bootstrap)
+  useEffect(() => {
+    if (!isStateless || liveStockRevision === 0) return;
+    refreshLivePage();
+  }, [liveStockRevision, isStateless, refreshLivePage]);
+
+  useEffect(() => {
+    if (!isStateless) return;
+
+    const onAppState = (next) => {
+      if (next === "active") refreshLivePage();
+    };
+    const sub = AppState.addEventListener("change", onAppState);
+
+    livePollRef.current = setInterval(refreshLivePage, LIVE_STOCK_POLL_MS);
+    return () => {
+      sub?.remove?.();
+      if (livePollRef.current) clearInterval(livePollRef.current);
+    };
+  }, [isStateless, refreshLivePage]);
 
   const handleLoadMore = () => {
     if (!isStateless || isLoadingLive || !liveHasMore) return;
@@ -226,6 +275,12 @@ const LibrariesScreen = () => {
       append: true,
       searchKey: filter.searchKey,
     });
+  };
+
+  const onRefresh = () => {
+    if (!isStateless) return;
+    setRefreshing(true);
+    refreshLivePage();
   };
 
   const handleCreateCurrentBill = async (item) => {
@@ -300,8 +355,13 @@ const LibrariesScreen = () => {
         keyExtractor={(item) => item?.sku}
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.4}
+        refreshControl={
+          isStateless ? (
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          ) : undefined
+        }
         ListFooterComponent={
-          isStateless && isLoadingLive ? (
+          isStateless && isLoadingLive && !refreshing ? (
             <ActivityIndicator style={{ marginVertical: 12 }} />
           ) : null
         }

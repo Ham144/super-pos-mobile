@@ -10,7 +10,7 @@
     "ios": "expo run:ios",
     "bundlejs": "npx react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res/",
     "postinstall": "rndebugger-open",
-    "patch": "sed -i 's/environment = \"development\"/environment = \"production\"/g' src/constant.js && eas update --branch production --platform android --message \"update production\""
+    "patch": "node scripts/set-env-production.js && eas update --branch production --platform android --message \"update production\""
   },
   "expo": {
     "doctor": {

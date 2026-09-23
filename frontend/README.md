@@ -102,20 +102,3 @@ bug fixing 2026-06-10
 [x] dapatkan initial inventory dari soap (mode stateless) 
 [x] dapatkan initial inventory dari soap (mode offline) 
 
-
-note: 
-## alur logika outlet mode stateless: 
-### jangan pakai syncMobileRoute, buat endpoint baru aja. syncMobileRoute biar untuk outlet mode offline
-- di sebelah kiri tampilkan daftar inventory langsung dari GetInventoryByLocationMultiple dengan cara get partial yang terlihat di layar
-(optional layer start )
-- klik tombol cetak bill: jika kasir  menetapkan diskon maka hanya simpan bill ke db dengan status menunggu konfirmasi approve discount tanpa hit function soap
-(optional layer start)
-- klik tombol cetak bill: saat tombol cetak bill (customer). jalankan soap SalesOrderAutoPostingShip dan simpan bill ke db untuk tau apakah di gudang ready
-- struk customer akan keluar dan diberikan ke customer untuk dibaca
-(optional layer start)
-- user meminta sku tertentu di hapus/diedit: maka soap GetSalesShipmentLines -> soap WsUndoShipment 
-(optional layer end)
-- tombol bayar berhasil: ubah status bill done: true, jalankan WsPostInvoiceSO
-(optional layer start )
-- void: di keesokan hari user ingin semua pembelian sku dalam 1 bill dibatalkan jalankan soap GetSalesShipmentLines -> soapWsUndoShipment 
-(optional layer end)

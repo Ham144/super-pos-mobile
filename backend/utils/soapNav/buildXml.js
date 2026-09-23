@@ -159,7 +159,7 @@ export const buildGetInventoryByLocationMultipleXml = ({
   return wrapEnvelope(body);
 };
 
-export const buildSoapXml = (operationKey, payload = {}) => {
+const buildSoapXmlByOperation = (operationKey, payload) => {
   switch (operationKey) {
     case NAV_SOAP_OPERATIONS.SALES_ORDER_AUTO_POSTING_SHIP:
       return buildSalesOrderAutoPostingShipXml(payload);
@@ -178,6 +178,49 @@ export const buildSoapXml = (operationKey, payload = {}) => {
     default:
       throw new Error(`Operasi SOAP NAV tidak dikenal: ${operationKey}`);
   }
+};
+
+const formatXmlForLog = (xml) => {
+  let depth = 0;
+  return xml
+    .replace(/>\s*</g, ">\n<")
+    .replace(/<([\w:]+)([^>]*)>\n<\/\1>/g, "<$1$2></$1>")
+    .split("\n")
+    .map((line) => {
+      const isClosing = /^<\//.test(line);
+      const isSelfContained = /^<[^/!?][^>]*>.*<\/[^>]+>$/.test(line) || /\/>$/.test(line);
+      if (isClosing) depth = Math.max(depth - 1, 0);
+      const out = `${"  ".repeat(depth)}${line}`;
+      if (!isClosing && !isSelfContained && /^<[^/!?]/.test(line)) depth += 1;
+      return out;
+    })
+    .join("\n");
+};
+
+export const buildSoapXml = (operationKey, payload = {}) => {
+  const xml = buildSoapXmlByOperation(operationKey, payload);
+  if (process.env.NODE_ENV === "development") {
+    const isInventory =
+      operationKey === NAV_SOAP_OPERATIONS.GET_INVENTORY_BY_LOCATION_MULTIPLE ||
+      operationKey === NAV_SOAP_OPERATIONS.GET_STATELESS_INVENTORY;
+    // Inventory di-hit per-SKU (banyak) — jangan flood console dengan full XML
+    if (isInventory) {
+      const n = payload?.items?.length || 0;
+      const sample = (payload?.items || [])
+        .slice(0, 3)
+        .map((i) => i.itemNo || i.sku)
+        .join(", ");
+      console.log(
+        `[SOAP NAV] ${operationKey} items=${n} loc=${payload?.locationCode || ""} ${sample}`,
+      );
+    } else {
+      const divider = "=".repeat(20);
+      console.log(
+        `\n${divider} [SOAP NAV XML] ${operationKey} ${divider}\n${formatXmlForLog(xml)}\n${divider} [END] ${operationKey} ${divider}\n`,
+      );
+    }
+  }
+  return xml;
 };
 
 /**

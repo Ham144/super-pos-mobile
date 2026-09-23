@@ -11,10 +11,17 @@ import {
 } from "lucide-react-native";
 import { Text, TouchableOpacity, View } from "react-native";
 import { DrawerActions } from "@react-navigation/native";
+import { Lock } from "lucide-react-native";
+import { isAddItemLocked, useCurrentBill, useOutlet } from "../store";
 
 const Tab = createBottomTabNavigator();
 
 const PointOfSaleNavigator = ({ navigation }) => {
+  const outletMode = useOutlet((s) => s.outlet?.mode);
+  const isLocked = useCurrentBill(
+    (s) => outletMode === "stateless" && isAddItemLocked(s),
+  );
+
   return (
     <View className={`flex-1`}>
       <Tab.Navigator screenOptions={{ headerShown: false }}>
@@ -48,6 +55,18 @@ const PointOfSaleNavigator = ({ navigation }) => {
           }}
         />
       </Tab.Navigator>
+      {isLocked && (
+        <View className="absolute inset-0 bg-black/60 items-center justify-center px-6">
+          <Lock size={40} color="white" />
+          <Text className="text-white text-lg font-bold mt-3 text-center">
+            Inventory Dikunci
+          </Text>
+          <Text className="text-white text-center mt-2">
+            Bill sudah dicetak & dikirim ke NAV. Item tidak bisa ditambah.
+            Selesaikan Bayar, atau Clear untuk membatalkan bill.
+          </Text>
+        </View>
+      )}
       {/* button untuk buka drawer */}
       <View className="absolute bottom-14 left-0">
         <TouchableOpacity

@@ -27,10 +27,10 @@ export const editLinesStateless = async ({
   };
   
   /** Stateless outlet bill flow — NOT sync-offline-mode */
-export const cetakBillStateless = async (bill) => {
+export const cetakBillStateless = async (bill, outletId = null) => {
     const response = await axios.post(
       `${await getBaseUrl()}/api/v1/stateless/cetak-bill`,
-      { bill },
+      { bill, ...(outletId ? { outletId } : {}) },
       { headers: await getMobileAuthHeaders() },
     );
     return response.data;

@@ -158,6 +158,14 @@ export const applyServerSession = async (payload) => {
 
   if (outletChanged) {
     await resetOutletScopedLocalData();
+  } else if (mode === "stateless") {
+    // Stateless: jangan biarkan dump inventori offline tersisa di device
+    await AsyncStorage.removeItem("inventories");
+    try {
+      useInventoriesOffline.getState().setInventoriesOffline([]);
+    } catch (_) {
+      /* store belum siap */
+    }
   }
 
   await AsyncStorage.setItem("outlet", JSON.stringify(outletToStore));

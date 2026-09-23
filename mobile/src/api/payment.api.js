@@ -3,10 +3,14 @@ import { getBaseUrl, getMobileAuthHeaders } from "../constant";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 
-export const createMidtransPayment = async (invoiceId, bill = null) => {
+export const createMidtransPayment = async (invoiceId, bill = null, outletId = null) => {
   const response = await axios.post(
     `${await getBaseUrl()}/api/v1/payment/midtrans/transaction`,
-    { invoiceId, ...(bill ? { bill } : {}) },
+    {
+      invoiceId,
+      ...(bill ? { bill } : {}),
+      ...(outletId ? { outletId } : {}),
+    },
     { headers: await getMobileAuthHeaders(), timeout: 30000 },
   );
   return response.data?.data;
@@ -50,10 +54,17 @@ export const bayarStateless = async ({
     paymentMethod,
     nomorTransaksi,
     tanggalBayar,
+    outletId,
   }) => {
     const response = await axios.post(
       `${await getBaseUrl()}/api/v1/stateless/bayar`,
-      { invoiceId, paymentMethod, nomorTransaksi, tanggalBayar },
+      {
+        invoiceId,
+        paymentMethod,
+        nomorTransaksi,
+        tanggalBayar,
+        ...(outletId ? { outletId } : {}),
+      },
       { headers: await getMobileAuthHeaders() },
     );
     return response.data;

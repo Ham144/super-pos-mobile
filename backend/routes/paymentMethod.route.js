@@ -144,10 +144,40 @@ const buildOrderId = (invoice, attempt) => {
   return `POS-${invoiceId}-${attempt}-${Date.now().toString(36)}`;
 };
 
+/** Samakan dengan mobile billBelongsToOutlet — jangan andalkan findOne(kasirList). */
+const billBelongsToOutlet = (billOrInvoice, outlet) => {
+  if (!billOrInvoice || !outlet?.kodeOutlet) return false;
+  const kode = String(outlet.kodeOutlet);
+  const id = String(billOrInvoice._id || "");
+  const kodeInvoice = String(billOrInvoice.kodeInvoice || "");
+
+  if (billOrInvoice.outlet && String(billOrInvoice.outlet) === String(outlet._id)) {
+    return true;
+  }
+  // Prefix `_id` + `-` agar kode pendek tidak nabrak (PR vs PRJ_JKT)
+  if (id.startsWith(`${kode}-`)) return true;
+  if (kodeInvoice.startsWith(kode)) return true;
+  return false;
+};
+
 const getInvoiceForCurrentOutlet = async (req, { invoiceId, kodeInvoice }) => {
-  const outlet = await Outlet.findOne({ kasirList: { $in: [req.userId] } }).select(
-    "_id kodeOutlet mode",
-  );
+  // Pakai currentOutlet user — findOne({ kasirList }) bisa ambil outlet lain
+  // kalau kasir masuk di beberapa outlet (tanpa user ganti outlet di UI).
+  const currentOutletId =
+    req.body?.outletId ||
+    req.userDB?.currentOutlet ||
+    req.user?.currentOutlet;
+
+  let outlet = null;
+  if (currentOutletId) {
+    outlet = await Outlet.findById(currentOutletId).select("_id kodeOutlet mode");
+  }
+  // Fallback hanya jika currentOutlet kosong (akun lama)
+  if (!outlet) {
+    outlet = await Outlet.findOne({ kasirList: { $in: [req.userId] } }).select(
+      "_id kodeOutlet mode",
+    );
+  }
   if (!outlet) return { error: "Outlet kasir tidak ditemukan", status: 403 };
 
   let invoice = null;
@@ -160,7 +190,7 @@ const getInvoiceForCurrentOutlet = async (req, { invoiceId, kodeInvoice }) => {
   }
 
   if (!invoice) return { error: "Bill tidak terdaftar", status: 404, outlet };
-  if (!invoice.kodeInvoice.startsWith(outlet.kodeOutlet)) {
+  if (!billBelongsToOutlet(invoice, outlet)) {
     return { error: "Bill bukan milik outlet Anda", status: 403, outlet };
   }
 
@@ -175,7 +205,7 @@ const upsertInvoiceFromBillSnapshot = async (bill, outlet) => {
     throw error;
   }
 
-  if (!String(bill.kodeInvoice).startsWith(outlet.kodeOutlet)) {
+  if (!billBelongsToOutlet(bill, outlet)) {
     const error = new Error("Bill bukan milik outlet Anda");
     error.status = 403;
     throw error;

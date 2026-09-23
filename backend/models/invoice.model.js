@@ -151,6 +151,16 @@ const invoiceSchema = new mongoose.Schema(
       default: "none",
     },
     navDocumentNo: String,
+    navSalesOrderNo: String,
+    navShipmentNo: String,
+    navShipments: [
+      {
+        salesOrderNo: String,
+        shipmentNo: String,
+        returnValue: String,
+        shippedAt: Date,
+      },
+    ],
     navShipmentLines: [
       {
         documentNo: String,
@@ -160,7 +170,14 @@ const invoiceSchema = new mongoose.Schema(
         location: String,
         uom: String,
         catatan: String,
-        type: String,
+        type: { type: String },
+      },
+    ],
+    navUndoneLines: [
+      {
+        documentNo: String,
+        lineNo: Number,
+        itemNo: String,
       },
     ],
     warehouseReady: Boolean,

@@ -64,7 +64,25 @@ Bill Offline punya outlet lain (atasi pakai fitur perbarui inventory seluruhnya 
 [x]cari kesalahan fungsi aggregate perubahan quantity
 [] kalau outlet nya diganti, kasih peringatan (seseorang mengganti outletmu, setelah sync terkahir kamu akan logout otomatis)
 [x] perbaiki masuk bulk upload csv \_id nya
-[] add: config printer harusnya nempel di outlet sebagai array yang bisa dipilih
+[x] add: config printer harusnya nempel di outlet sebagai array yang bisa dipilih
 
 update code javascript dan UI tanpa reinstall pakai lib expo-updates
 tanpa reinstall : eas update --branch production --message "Perbaikan UI dan logika printer"
+
+
+note: 
+## alur logika outlet mode stateless: 
+### jangan pakai syncMobileRoute, buat endpoint baru aja. syncMobileRoute biar untuk outlet mode offline
+- di sebelah kiri tampilkan daftar inventory langsung dari GetInventoryByLocationMultiple dengan cara get partial yang terlihat di layar
+(optional layer start )
+- klik tombol cetak bill: jika kasir  menetapkan diskon maka hanya simpan bill ke db dengan status menunggu konfirmasi approve discount tanpa hit function soap
+(optional layer start)
+- klik tombol cetak bill: saat tombol cetak bill (customer). jalankan soap SalesOrderAutoPostingShip dan simpan bill ke db untuk tau apakah di gudang ready
+- struk customer akan keluar dan diberikan ke customer untuk dibaca
+(optional layer start)
+- user meminta sku tertentu di hapus/diedit: maka soap GetSalesShipmentLines -> soap WsUndoShipment 
+(optional layer end)
+- tombol bayar berhasil: ubah status bill done: true, jalankan WsPostInvoiceSO
+(optional layer start )
+- void: di keesokan hari user ingin semua pembelian sku dalam 1 bill dibatalkan jalankan soap GetSalesShipmentLines -> soapWsUndoShipment 
+(optional layer end)

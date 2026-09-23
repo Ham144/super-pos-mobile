@@ -12,6 +12,12 @@ import { ToastAndroid } from "react-native";
         catatan: "",
     }
     */
+// Stateless: setelah Cetak Bill (Customer) bill sudah di-ship ke NAV, jadi tidak boleh tambah item.
+export const isAddItemLocked = (billState) =>
+  useOutlet.getState().outlet?.mode === "stateless" &&
+  Boolean(billState?.isPrintedCustomerBilling) &&
+  !billState?.done;
+
 export const useCurrentBill = create((set) => ({
   _id: "",
   currentBill: [], //didalam nya ada lihat diatas
@@ -75,6 +81,13 @@ export const useCurrentBill = create((set) => ({
     set((state) => {
       // Quick validation to prevent issues
       if (!item || !item.sku) return state;
+      if (isAddItemLocked(state)) {
+        ToastAndroid?.show(
+          "Bill sudah dicetak & dikirim ke NAV, tidak bisa tambah item",
+          ToastAndroid.SHORT
+        );
+        return state;
+      }
 
       const { currentBill } = state;
       const existingIndex = currentBill.findIndex(
@@ -376,9 +389,28 @@ export const useNetInfo = create((set) => ({
 export const useInventoriesOffline = create((set) => ({
   inventoriesOffline: [],
   setInventoriesOffline: async (inventories) => {
+    // Stateless: jangan cache inventori ke AsyncStorage / memory dump
+    let mode = null;
+    try {
+      const raw = await AsyncStorage.getItem("outlet");
+      mode = raw ? JSON.parse(raw)?.mode : null;
+    } catch (_) {
+      mode = null;
+    }
+    if (mode === "stateless") {
+      set({ inventoriesOffline: [] });
+      await AsyncStorage.removeItem("inventories");
+      return;
+    }
     set({ inventoriesOffline: inventories });
     await AsyncStorage.setItem("inventories", JSON.stringify(inventories));
   },
+}));
+
+/** Stateless: bump setelah cetak/ship agar Libraries refetch qty NAV. */
+export const useLiveStockRevision = create((set) => ({
+  revision: 0,
+  bumpLiveStock: () => set((state) => ({ revision: state.revision + 1 })),
 }));
 
 export const useDiskonOffline = create((set) => ({

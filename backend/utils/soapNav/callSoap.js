@@ -116,26 +116,29 @@ const parseQtyNumber = (raw) => {
 };
 
 /**
- * Stok aktual NAV sering di tag Inventory.
- * Quantity di request kita kirim 0 — kalau di-echo balik, "0" masih truthy
- * dan menimpa pembacaan Inventory (bug saat search 1–2 SKU).
+ * XmlPort x50033 (InventoryPerLocation): stok live ada di tag Quantity.
+ * Request kita kirim Quantity=0 sebagai placeholder; NAV mengisi ulang di response.
+ * Jangan prefer tag Inventory — itu yang bikin CRJ3302S jadi 8 padahal Postman Quantity=0.
  */
 export const resolveNavStockQuantity = (block) => {
-  const fromInventory = parseQtyNumber(extractNestedTag(block, "Inventory"));
   const fromQuantity = parseQtyNumber(extractNestedTag(block, "Quantity"));
+  const fromInventory = parseQtyNumber(extractExactTag(block, "Inventory"));
   const fromQty = parseQtyNumber(extractNestedTag(block, "Qty"));
-  
-  if (fromInventory !== null) {
-    // Inventory ada: pakai itu, kecuali Quantity non-zero (beberapa op isi Quantity)
-    if (fromQuantity !== null && fromQuantity !== 0) {
-      return fromQuantity;
-    }
-    return fromInventory;
-  }
 
   if (fromQuantity !== null) return fromQuantity;
+  if (fromInventory !== null) return fromInventory;
   if (fromQty !== null) return fromQty;
   return 0;
+};
+
+/** Exact tag match — jangan cocokkan prefix "Inventory" ke "InventoryPerLocation". */
+const extractExactTag = (block, tagName) => {
+  const regex = new RegExp(
+    `<(?:\\w+:)?${tagName}(?![\\w:-])[^>]*>([^<]*)</(?:\\w+:)?${tagName}>`,
+    "i",
+  );
+  const match = block.match(regex);
+  return match?.[1]?.trim() ?? null;
 };
 
 /**

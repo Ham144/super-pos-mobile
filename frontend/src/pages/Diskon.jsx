@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { getAllinventories } from "../api/itemLibraryApi";
 import {
   getAllDiskon,
@@ -368,6 +368,25 @@ const Diskon = () => {
     URL.revokeObjectURL(url);
   };
 
+  const closeDiskonEditor = () => {
+    setselectedDiskon(null);
+    setDiskonBaru(null);
+    setIseditingDiskon(false);
+    document.getElementById("diskonEditor")?.close();
+  };
+
+  useEffect(() => {
+    const editor = document.getElementById("diskonEditor");
+    if (!editor) return;
+
+    const shouldOpen = Boolean(selectedDiskon || diskonBaru);
+    if (shouldOpen) {
+      if (!editor.open) editor.showModal();
+    } else if (editor.open) {
+      editor.close();
+    }
+  }, [selectedDiskon, diskonBaru]);
+
   return (
     <div>
       <div className="flex gap-6 min-h-[95vh] max-h-[95vh] overflow-y-hidden bg-gray-100 ">
@@ -581,9 +600,9 @@ const Diskon = () => {
           </table>
         </div>
 
-        {/* Right Panel: General Information */}
-        {(selectedDiskon || diskonBaru) && (
-          <div className="w-1/3 bg-white rounded-xl shadow-lg overflow-y-auto flex flex-col border border-gray-200">
+        {/* Editor Diskon (dialog) */}
+        <dialog id="diskonEditor" className="modal">
+          <div className="modal-box w-11/12 max-w-3xl max-h-[90vh] overflow-y-auto p-0">
             {/* Header Section */}
             <div className="p-6 border-b bg-gradient-to-r from-blue-600 to-blue-800 text-white sticky top-0 z-20">
               <h1 className="text-xl font-semibold">
@@ -603,10 +622,7 @@ const Diskon = () => {
                 <button
                   type="button"
                   className="flex flex-1 items-center px-4 py-2 bg-white text-gray-600 rounded-md hover:bg-gray-50 transition-colors justify-center"
-                  onClick={() => {
-                    setselectedDiskon(null);
-                    setDiskonBaru(null);
-                  }}
+                  onClick={closeDiskonEditor}
                 >
                   <X className="w-5 h-5 mr-2" />
                   Batal
@@ -1010,7 +1026,12 @@ const Diskon = () => {
               </form>
             </div>
           </div>
-        )}
+          <form method="dialog" className="modal-backdrop">
+            <button type="submit" onClick={closeDiskonEditor}>
+              close
+            </button>
+          </form>
+        </dialog>
       </div>
 
       <dialog id="pickdiskon" className="modal">

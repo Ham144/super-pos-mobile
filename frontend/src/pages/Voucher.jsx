@@ -159,6 +159,25 @@ const Voucher = () => {
     setShowEdit(true);
   };
 
+  const closeVoucherEditor = () => {
+    setSelectedVoucher(null);
+    setNewVoucher(null);
+    setShowEdit(false);
+    setTempSkuTerhubung([]);
+    document.getElementById("voucherEditor")?.close();
+  };
+
+  useEffect(() => {
+    const editor = document.getElementById("voucherEditor");
+    if (!editor) return;
+
+    if (showEdit) {
+      if (!editor.open) editor.showModal();
+    } else if (editor.open) {
+      editor.close();
+    }
+  }, [showEdit]);
+
   // Handle klik baris voucher
   const handleRowClick = (voucher) => {
     // Reset state dahulu
@@ -265,11 +284,7 @@ const Voucher = () => {
             <div className="h-screen">
               <div className="flex w-full gap-x-4 min-h-[95vh] max-h-[95vh] overflow-y-hidden">
                 {/* Layout Kiri (Tabel Voucher) */}
-                <div
-                  className={`transition-all justify-between duration-300 overflow-y-auto  ${
-                    showEdit ? "flex-1" : "w-full"
-                  } bg-white p-4`}
-                >
+                <div className="transition-all justify-between duration-300 overflow-y-auto w-full bg-white p-4">
                   <div className="flex self-end   mb-4 justify-between">
                     <h2 className="md:text-xl font-bold">Daftar Voucher</h2>
                     <div className="flex gap-x-3 itemc">
@@ -414,9 +429,9 @@ const Voucher = () => {
                   </div>
                 </div>
 
-                {/* Layout Kanan (Edit Aturan Voucher) */}
-                {showEdit && (
-                  <div className="w-[500px] bg-white  rounded-lg shadow-xl overflow-y-auto ">
+                {/* Editor Voucher (dialog) */}
+                <dialog id="voucherEditor" className="modal">
+                  <div className="modal-box w-11/12 max-w-2xl max-h-[90vh] overflow-y-auto p-0">
                     <form
                       onSubmit={() => {
                         selectedVoucher
@@ -436,12 +451,7 @@ const Voucher = () => {
                           <button
                             type="button"
                             className="flex items-center px-4 py-2 bg-white text-gray-600 rounded-md hover:bg-gray-50 transition-colors flex-1 justify-center"
-                            onClick={() => {
-                              setSelectedVoucher();
-                              setNewVoucher();
-                              setShowEdit(false);
-                              setTempSkuTerhubung([]);
-                            }}
+                            onClick={closeVoucherEditor}
                           >
                             <X className="w-5 h-5 mr-2" />
                             Batal
@@ -769,8 +779,15 @@ const Voucher = () => {
                         </div>
                       </div>
                     </form>
+                  </div>
+                  <form method="dialog" className="modal-backdrop">
+                    <button type="submit" onClick={closeVoucherEditor}>
+                      close
+                    </button>
+                  </form>
+                </dialog>
 
-                    <dialog id="pickvoucher" className="modal">
+                <dialog id="pickvoucher" className="modal">
                       <div className="modal-box w-11/12 max-w-5xl">
                         <h3 className="font-bold text-lg mb-4">
                           Pilih Produk untuk Voucher
@@ -863,8 +880,6 @@ const Voucher = () => {
                         </div>
                       </div>
                     </dialog>
-                  </div>
-                )}
               </div>
 
               <PickMultiInventoriesDialog

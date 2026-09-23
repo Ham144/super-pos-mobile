@@ -104,10 +104,7 @@ const CheckDiskonOffline = () => {
       } else {
         const diskonStorage = JSON.parse(await AsyncStorage.getItem("diskon"));
         if (!diskonStorage) {
-          if(environment == "production") return;
-          else {
-            console.log("gagal mengambil diskon dari local, coba sync ulang");
-          }
+          return
         } else {
           setDiskonOffline(diskonStorage);
           const processesedItems = await applyDiskonToItems(
@@ -119,10 +116,7 @@ const CheckDiskonOffline = () => {
       }
     } catch (error) {
       console.log(error);
-      if(environment == "production") return;
-      else {
-        console.log("gagal mengambil diskon dari local, coba sync");
-      }
+      return
     }
   };
 

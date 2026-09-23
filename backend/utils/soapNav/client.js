@@ -1,6 +1,5 @@
 import Soap from "../../models/Soap.model.js";
 import Outlet from "../../models/Outlet.model.js";
-import InventoryRefrensi from "../../models/InventoryRefrensi.model.js";
 import {
   defaultSoapAction,
   NAV_SOAP_OPERATIONS,
@@ -15,13 +14,6 @@ import {
 
 const normalizeSkuKey = (sku) => String(sku ?? "").trim().toUpperCase();
 const normalizeLocationKey = (code) => String(code ?? "").trim().toUpperCase();
-
-/**
- * NAV GetInventoryByLocationMultiple pada environment CSI mengembalikan
- * Quantity=0 jika jumlah baris request terlalu sedikit (≤5). Batch lebih besar akurat.
- * Pad dengan SKU lain di outlet yang sama (filler diabaikan saat overlay).
- */
-const MIN_NAV_INVENTORY_LINES = 20;
 
 const operationNeedsLocationCode = (operationKey) =>
   operationKey === NAV_SOAP_OPERATIONS.SALES_ORDER_AUTO_POSTING_SHIP ||
@@ -150,52 +142,43 @@ export const buildQuantityBySkuMap = (parsedItems = [], locationCode) => {
   return quantityBySku;
 };
 
-export const padSkusForNavBatch = async (outletId, skus = []) => {
-  const unique = [
-    ...new Set(skus.map((s) => String(s).trim()).filter(Boolean)),
-  ];
-  if (unique.length >= MIN_NAV_INVENTORY_LINES) return unique;
+const mapLimit = async (items, limit, worker) => {
+  const results = new Array(items.length);
+  let nextIndex = 0;
 
-  const need = MIN_NAV_INVENTORY_LINES - unique.length;
-  const fillers = await InventoryRefrensi.find({
-    outlet: outletId,
-    sku: { $nin: unique },
-  })
-    .select("sku")
-    .limit(need)
-    .lean();
+  const run = async () => {
+    while (nextIndex < items.length) {
+      const current = nextIndex;
+      nextIndex += 1;
+      results[current] = await worker(items[current], current);
+    }
+  };
 
-  for (const row of fillers) {
-    if (row?.sku) unique.push(String(row.sku).trim());
-  }
-
-  return unique;
+  const runners = Array.from({ length: Math.min(limit, items.length) }, () =>
+    run(),
+  );
+  await Promise.all(runners);
+  return results;
 };
 
-export const checkInventoryByOutlet = async ({
+/**
+ * Satu panggilan SOAP untuk satu SKU (format sama seperti Postman).
+ * Batch multi-SKU di GetInventoryByLocationMultiple CSI tidak andal —
+ * qty bisa tertukar/salah (CRJ3302S single=0, batch=1/8).
+ */
+const fetchNavStockForOneSku = async ({
   outletId,
-  skus = [],
-  operationKey = NAV_SOAP_OPERATIONS.GET_INVENTORY_BY_LOCATION_MULTIPLE,
-  padBatch = true,
+  sku,
+  locationCode,
+  operationKey,
 }) => {
-  const locationCode = await getOutletLocationCode(outletId);
-  const requestedSkus = [
-    ...new Set(skus.map((s) => String(s).trim()).filter(Boolean)),
-  ];
-  const uniqueSkus = padBatch
-    ? await padSkusForNavBatch(outletId, requestedSkus)
-    : requestedSkus;
-
-  const items = uniqueSkus.map((sku) => ({
-    itemNo: sku,
-    locationCode,
-    quantity: 0,
-  }));
-
   const result = await executeNavSoap({
     outletId,
     operationKey,
-    payload: { items, locationCode },
+    payload: {
+      items: [{ itemNo: sku, locationCode, quantity: 0 }],
+      locationCode,
+    },
   });
 
   let parsedItems = parseInventoryPerLocationList(result.response?.body);
@@ -204,6 +187,66 @@ export const checkInventoryByOutlet = async ({
   }
 
   const quantityBySku = buildQuantityBySkuMap(parsedItems, locationCode);
+  const key = normalizeSkuKey(sku);
+  const hasQty = Object.prototype.hasOwnProperty.call(quantityBySku, key);
+
+  return {
+    sku,
+    key,
+    quantity: hasQty ? quantityBySku[key] : null,
+    parsedItems,
+    result,
+  };
+};
+
+export const checkInventoryByOutlet = async ({
+  outletId,
+  skus = [],
+  operationKey = NAV_SOAP_OPERATIONS.GET_INVENTORY_BY_LOCATION_MULTIPLE,
+  concurrency = 8,
+}) => {
+  const locationCode = await getOutletLocationCode(outletId);
+  const requestedSkus = [
+    ...new Set(skus.map((s) => String(s).trim()).filter(Boolean)),
+  ];
+
+  if (requestedSkus.length === 0) {
+    return {
+      operationKey,
+      items: [],
+      quantityBySku: {},
+      requestedSkus: [],
+    };
+  }
+
+  // Selalu 1 SKU / request — selaras Postman; batch multi-line di NAV CSI corrupt qty
+  const rows = await mapLimit(requestedSkus, concurrency, (sku) =>
+    fetchNavStockForOneSku({
+      outletId,
+      sku,
+      locationCode,
+      operationKey,
+    }),
+  );
+
+  const quantityBySku = {};
+  const parsedItems = [];
+  let lastResult = null;
+
+  for (const row of rows) {
+    lastResult = row.result;
+    parsedItems.push(...(row.parsedItems || []));
+    if (row.quantity !== null) {
+      quantityBySku[row.key] = row.quantity;
+    }
+  }
+
+  if (process.env.NODE_ENV === "development") {
+    const sample = requestedSkus.slice(0, 5).map((sku) => {
+      const key = normalizeSkuKey(sku);
+      return { sku, navQty: quantityBySku[key] };
+    });
+  }
 
   const requestedKeys = requestedSkus.map(normalizeSkuKey);
   const matched = requestedKeys.filter((key) =>
@@ -218,25 +261,19 @@ export const checkInventoryByOutlet = async ({
     throw err;
   }
 
-  const filteredMap = {};
-  for (const key of requestedKeys) {
-    if (Object.prototype.hasOwnProperty.call(quantityBySku, key)) {
-      filteredMap[key] = quantityBySku[key];
-    }
-  }
-
   return {
-    ...result,
+    ...(lastResult || {}),
+    operationKey,
     items: parsedItems,
-    quantityBySku: filteredMap,
+    quantityBySku,
     requestedSkus,
-    batchedSkus: uniqueSkus,
   };
 };
 
 /**
  * Overlay NAV qty onto the current page of Mongo inventory docs.
- * Used for outlet.mode === "stateless". Soft-fails to Mongo qty.
+ * Stateless: stok = NAV. Jangan fallback ke qty Mongo (bisa stale, mis. 8
+ * padahal Postman/NAV bilang 0) — SKU absen di response NAV = 0.
  */
 export const enrichInventoriesWithNavStock = async (
   outletId,
@@ -252,7 +289,12 @@ export const enrichInventoriesWithNavStock = async (
 
   if (!outletId || skus.length === 0) {
     return {
-      inventories: list.map((inv) => ({ ...inv, stockSource: "local" })),
+      inventories: list.map((inv) => ({
+        ...inv,
+        quantityLocal: inv.quantity,
+        quantity: 0,
+        stockSource: "local",
+      })),
       stockSource: "local",
       navError: null,
     };
@@ -272,7 +314,6 @@ export const enrichInventoriesWithNavStock = async (
         outletId,
         skus,
         operationKey: op,
-        padBatch: true,
       });
       const enriched = list.map((inv) => {
         const key = normalizeSkuKey(inv.sku);
@@ -280,13 +321,28 @@ export const enrichInventoriesWithNavStock = async (
           result.quantityBySku,
           key,
         );
+        // NAV sukses: qty dari map (termasuk 0). SKU tidak dikembalikan NAV = 0,
+        // BUKAN quantity Mongo — itu yang bikin UI nunjukin 8 sementara Postman 0.
         return {
           ...inv,
           quantityLocal: inv.quantity,
-          quantity: hasNav ? result.quantityBySku[key] : inv.quantity,
-          stockSource: hasNav ? "nav" : "local",
+          quantity: hasNav ? result.quantityBySku[key] : 0,
+          stockSource: hasNav ? "nav" : "nav-missing",
         };
       });
+
+      if (process.env.NODE_ENV === "development") {
+        const sample = enriched.slice(0, 5).map((inv) => {
+          const key = normalizeSkuKey(inv.sku);
+          return {
+            sku: inv.sku,
+            navQty: inv.quantity,
+            mongoQty: inv.quantityLocal,
+            stockSource: inv.stockSource,
+            rawNav: result.quantityBySku[key],
+          };
+        });
+      }
 
       return {
         inventories: enriched,
@@ -300,10 +356,12 @@ export const enrichInventoriesWithNavStock = async (
     }
   }
 
+  // Soft-fail: jangan tampilkan qty Mongo seolah live NAV
   return {
     inventories: list.map((inv) => ({
       ...inv,
       quantityLocal: inv.quantity,
+      quantity: 0,
       stockSource: "local",
     })),
     stockSource: "local",
@@ -318,5 +376,4 @@ export default {
   checkInventoryByOutlet,
   enrichInventoriesWithNavStock,
   buildQuantityBySkuMap,
-  padSkusForNavBatch,
 };
