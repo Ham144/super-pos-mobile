@@ -8,6 +8,7 @@ import Diskon from "../models/DaftarDiskon.model.js";
 import Promo from "../models/DaftarPromo.model.js";
 import DaftarVoucher from "../models/DaftarVoucher.model.js";
 import { stackTracingSku } from "../utils/stackTracingSku.js";
+import { sendWhatsappByFonnte } from "../utils/whatsappSender.js";
 
 // total qty semua baris di currentBill
 const totalQtyBill = (bills = []) =>
@@ -151,8 +152,13 @@ router.get("/getInvoiceFilterComplex", async (req, res) => {
     // Filter berdasarkan pencarian
     if (search) {
       filter.$or = [
-        { kodeInvoice: { $regex: search?.trim(), $options: "i" } },
+        { kodeInvoice: { $regex: search?.trim(), $options: "i" },  },
         { _id: { $regex: search?.trim(), $options: "i" } },
+        {
+          navSalesOrderNo: {
+            $regex: search?.trim(), $options: "i"
+          }
+        }
       ];
     }
 
@@ -415,7 +421,27 @@ router.post("/voidInvoice", async (req, res) => {
         },
       },
       { new: false },
-    );
+    ).populate(["customer"])
+
+    if(invoiceDB?.customer?.phone){
+      const cust =  invoiceDB.customer
+      const voidMessage = `
+      Halo *${cust.name}*, Kami ingin menginformasikan bahwa permintaan pembatalan untuk invoice Anda telah berhasil diproses dengan rincian sebagai berikut:
+      
+      *Nomor Invoice:* ${invoiceDB.kodeInvoice}
+      *Tanggal Pembatalan:* ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
+      *Total Tagihan:* Rp ${Number(invoiceDB.total).toLocaleString('id-ID')}
+      *Status:* VOID
+      
+      Jika Anda tidak merasa mengajukan pembatalan ini atau memiliki pertanyaan, silakan hubungi layanan pelanggan kami. Terima kasih.`;
+      
+      const wa = await sendWhatsappByFonnte(cust.phone, voidMessage);
+      if(wa?.status === true || wa?.status === "true"){
+        await Customer.findByIdAndUpdate(cust._id, {
+          $set: { phoneIsVerified: true },
+        });
+      }
+    }
   } catch (error) {
     return res
       .status(400)

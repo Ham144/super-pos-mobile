@@ -47,6 +47,7 @@ const allowedOrigins = new Set(
   [
     process.env.FRONTEND,
     "http://192.168.21.193:5173",
+    "http://192.168.21.12",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:3000",

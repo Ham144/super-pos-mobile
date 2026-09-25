@@ -27,3 +27,4 @@ dist-ssr
 /dist
 /frontend/public/uploads
 /frontend/.vite-cache/*
+/deploy_frontend.sh

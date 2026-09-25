@@ -651,6 +651,11 @@ export const createStatelessBillService = ({
       payload: { docNo: existing.navDocumentNo },
     });
 
+    const returnValue = soapResult?.parsed?.returnValue || null;
+    const navSalesInvoiceNo = returnValue
+      ? String(returnValue).split(";")[0].trim() || null
+      : null;
+
     const saved = await upsertInvoice({
       ...existing,
       done: true,
@@ -659,7 +664,8 @@ export const createStatelessBillService = ({
       nomorTransaksi: nomorTransaksi || existing.nomorTransaksi,
       tanggalBayar: tanggalBayar ? new Date(tanggalBayar) : new Date(),
       navInvoicedAt: new Date(),
-      navInvoiceReturnValue: soapResult?.parsed?.returnValue || null,
+      navInvoiceReturnValue: returnValue,
+      navSalesInvoiceNo: navSalesInvoiceNo || existing.navSalesInvoiceNo || null,
     });
 
     return {
@@ -669,7 +675,8 @@ export const createStatelessBillService = ({
       soap: {
         operationKey: NAV_SOAP_OPERATIONS.WS_POST_INVOICE_SO,
         documentNo: existing.navDocumentNo,
-        returnValue: soapResult?.parsed?.returnValue,
+        returnValue,
+        salesInvoiceNo: navSalesInvoiceNo,
       },
     };
   };

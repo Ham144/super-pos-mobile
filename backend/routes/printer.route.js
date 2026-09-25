@@ -329,6 +329,7 @@ router.post("/printCetakBillCustomer", async (req, res) => {
       customerEmail: bill?.customerEmail,
       time,
       kodeInvoice: bill?.kodeInvoice,
+      navSalesOrderNo: bill?.navSalesOrderNo,
     });
 
     if (isSuccess) {
@@ -389,6 +390,9 @@ router.post("/printCetakKuitansi", async (req, res) => {
       customerEmail: bill?.customerEmail,
       time,
       kodeInvoice: bill?.kodeInvoice,
+      navSalesOrderNo: bill?.navSalesOrderNo,
+      navSalesInvoiceNo: bill?.navSalesInvoiceNo,
+      navInvoiceReturnValue: bill?.navInvoiceReturnValue,
     });
 
     if (isSuccess) {

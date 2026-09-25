@@ -9,6 +9,7 @@ import {
   Alert,
 } from "react-native";
 import RegisterInvoice from "../components/RegisterInvoice";
+import AddItemLockOverlay from "../components/AddItemLockOverlay";
 import { useEffect, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { PackageSearch, Search, X } from "lucide-react-native";
@@ -292,6 +293,7 @@ const FavoritesScreen = () => {
             </View>
           )}
         </ScrollView>
+        <AddItemLockOverlay />
       </View>
 
       <RegisterInvoice />

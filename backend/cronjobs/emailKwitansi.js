@@ -80,7 +80,7 @@ const sendKwitansiEmail = async (invoice, transporter, senderEmail) => {
     const mailOptions = {
       from: `"${outletDB.namaOutlet}" <${senderEmail}>`,
       to: invoice.customer,
-      subject: `Bukti Pembayaran - ${outletDB.namaOutlet} - ${invoice.kodeInvoice}`,
+      subject: `INVOICE PEMBELIAN - ${outletDB.namaOutlet} - ${invoice.kodeInvoice}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 5px;">
           <div style="text-align: center; margin-bottom: 20px;">
@@ -90,9 +90,24 @@ const sendKwitansiEmail = async (invoice, transporter, senderEmail) => {
           </div>
           
           <div style="margin-bottom: 20px; padding: 10px; background-color: #f9f9f9; border-radius: 5px;">
-            <h2 style="text-align: center; color: #2c3e50;">BUKTI PEMBAYARAN</h2>
+            <h2 style="text-align: center; color: #2c3e50;">INVOICE PEMBELIAN</h2>
             <p><strong>Tanggal:</strong> ${invoiceDate}</p>
             <p><strong>No. Invoice:</strong> ${invoice.kodeInvoice}</p>
+            ${
+              invoice.navSalesOrderNo
+                ? `<p><strong>SO:</strong> ${invoice.navSalesOrderNo}</p>`
+                : ""
+            }
+            ${
+              (() => {
+                const si =
+                  invoice.navSalesInvoiceNo ||
+                  (invoice.navInvoiceReturnValue
+                    ? String(invoice.navInvoiceReturnValue).split(";")[0].trim()
+                    : "");
+                return si ? `<p><strong>SI:</strong> ${si}</p>` : "";
+              })()
+            }
             <p><strong>Kasir:</strong> ${invoice.salesPerson || "-"}</p>
             <p><strong>SPG:</strong> ${invoice.spg || "-"}</p>
           </div>
@@ -113,7 +128,7 @@ const sendKwitansiEmail = async (invoice, transporter, senderEmail) => {
               <tr>
                 <td colspan="3" style="border: 1px solid #ddd; padding: 8px; text-align: right;"><strong>Sub Total:</strong></td>
                 <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">${formatCurrency(
-                  invoice.subTotal || 0
+                  Math.round(Number(invoice.total || 0) / 1.11)
                 )}</td>
               </tr>
               <tr>

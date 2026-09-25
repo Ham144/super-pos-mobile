@@ -1,11 +1,11 @@
 import { Router } from "express";
-import Pelanggan from "../models/Pelanggan.model.js";
+import Customer from "../models/Customer.model.js";
 
 const router = Router();
 
 router.get("/getAllCustomer", async (req, res) => {
   try {
-    const customers = await Pelanggan.find({});
+    const customers = await Customer.find({});
     return res.json({
       message: "Berhasil mengambil customerList",
       data: customers,
@@ -26,7 +26,7 @@ router.put("/editCustomer/:id", async (req, res) => {
     });
   }
   try {
-    await Pelanggan.findByIdAndUpdate(id, {
+    await Customer.findByIdAndUpdate(id, {
       $set: {
         name: req.body.name,
         telepon: req.body.telepon,
@@ -53,7 +53,7 @@ router.delete("/deleteCustomer/:id", async (req, res) => {
     return res.status(400).json({ message: "tidak dapat menghapus customer" });
   }
   try {
-    await Pelanggan.findByIdAndDelete(id);
+    await Customer.findByIdAndDelete(id);
     return res.json({ message: "berhasil menghapus customer" });
   } catch (error) {
     console.log(error);

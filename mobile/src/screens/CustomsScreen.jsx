@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { View, Text, TouchableOpacity, Platform, useWindowDimensions } from "react-native";
 import RegisterInvoice from "../components/RegisterInvoice";
+import AddItemLockOverlay from "../components/AddItemLockOverlay";
 import { useCurrentBill } from "../store";
 
 export default function CustomsScreen() {
@@ -95,6 +96,7 @@ export default function CustomsScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+            <AddItemLockOverlay />
           </View>
           
           {/* Invoice Section */}
@@ -132,6 +134,7 @@ export default function CustomsScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+            <AddItemLockOverlay />
           </View>
 
           {/* Layout Kanan: Daftar Tambahan dan Total */}

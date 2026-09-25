@@ -1,9 +1,7 @@
 import { Router } from "express";
 import DaftarVoucher from "../models/DaftarVoucher.model.js";
 import GeneratedVoucher from "../models/GeneratedVoucher.model.js";
-import UserRefrensi from "../models/User.model.js";
-import emailSender from "../utils/emailSender.js";
-import Pelanggan from "../models/Pelanggan.model.js";
+import Customer from "../models/Customer.model.js";
 
 const router = Router();
 
@@ -292,7 +290,7 @@ router.post("/publicVoucherConverting", async (req, res) => {
       });
     }
 
-    const isCustomerFraud = await Pelanggan.findOne({
+    const isCustomerFraud = await Customer.findOne({
       email: customerEmail,
       voucherImplemented: { $in: [voucherRefrence._id] },
     });
@@ -373,7 +371,7 @@ router.post("/publicVoucherConverting", async (req, res) => {
     const [isSuccess, error] = await emailSender({ to, subject, html });
     console.log("berhasil mengirim email", isSuccess);
     if (isSuccess) {
-      await Pelanggan.updateOne(
+      await Customer.updateOne(
         { email: customerEmail },
         { $push: { voucherImplemented: voucherRefrence._id } },
         { upsert: true }

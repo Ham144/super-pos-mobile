@@ -255,6 +255,30 @@ const Invoices = () => {
     setCurrentPage(1);
   }, [status, sortBy, outlet, spg, kasir, limit, search, dateRange]);
 
+  const selectedOutletMeta = outletData?.data?.find(
+    (o) => o.kodeOutlet === outlet,
+  );
+  const isStatelessView = selectedOutletMeta?.mode === "stateless";
+
+  /** return_value SalesOrderAutoPostingShip — disimpan di invoice.navShipReturnValue */
+  const formatNavShipReturn = (invoice) => {
+    if (invoice?.navShipReturnValue) return invoice.navShipReturnValue;
+    const parts = [invoice?.navSalesOrderNo, invoice?.navShipmentNo].filter(
+      Boolean,
+    );
+    return parts.length ? parts.join(";") : "";
+  };
+
+  const formatNavInvoiceReturn = (invoice) => {
+    if (invoice?.navSalesInvoiceNo) return invoice.navSalesInvoiceNo;
+    if (invoice?.navInvoiceReturnValue) {
+      return String(invoice.navInvoiceReturnValue).split(";")[0].trim();
+    }
+    return "";
+  };
+
+  const tableColSpan = isStatelessView ? 16 : 14;
+
   const exportToCSV = () => {
     if (!invoiceData?.data) return;
 
@@ -271,7 +295,7 @@ const Invoices = () => {
       "EXT CODE",
       "Outlet",
       "Nomor Transaksi",
-      "Pelanggan",
+      "Cust/Pelanggan",
       "Tanggal Sync",
       "Tanggal Bill",
       "Tanggal Void",
@@ -289,6 +313,16 @@ const Invoices = () => {
       "Bayar",
       "Kwitansi",
       "Voucher Terpakai",
+      ...(isStatelessView
+        ? [
+            "NAV Ship Return",
+            "NAV Sales Order",
+            "NAV Shipment",
+            "NAV Document No",
+            "NAV Invoice",
+            "Warehouse Ready",
+          ]
+        : []),
       "Tipe Baris",
       "SKU",
       "Nama Barang",
@@ -334,6 +368,16 @@ const Invoices = () => {
       invoice.done ? "Lunas" : "Belum",
       invoice.isPrintedKwitansi ? "Sudah" : "Belum",
       voucherTerpakai(invoice),
+      ...(isStatelessView
+        ? [
+            formatNavShipReturn(invoice),
+            invoice.navSalesOrderNo || "",
+            invoice.navShipmentNo || "",
+            invoice.navDocumentNo || "",
+            formatNavInvoiceReturn(invoice),
+            invoice.warehouseReady ? "Ya" : "Tidak",
+          ]
+        : []),
     ];
 
     const itemCols = ({
@@ -497,6 +541,53 @@ const Invoices = () => {
 
   const renderInvoiceExpandedDetail = (invoice, { showMeta = false } = {}) => (
     <>
+      {isStatelessView && (
+        <div className="mb-4 bg-white rounded-xl shadow-sm border border-indigo-100 overflow-hidden">
+          <div className="bg-gradient-to-r from-indigo-950 to-indigo-600 px-4 py-2">
+            <h3 className="text-sm font-semibold text-white">
+              NAV SalesOrderAutoPostingShip / Bayar
+            </h3>
+          </div>
+          <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+            <div>
+              <p className="text-xs text-gray-500">Ship return_value</p>
+              <p className="font-mono text-gray-900 break-all">
+                {formatNavShipReturn(invoice) || "-"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Document No</p>
+              <p className="font-mono text-gray-900">
+                {invoice.navDocumentNo || "-"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Sales Order</p>
+              <p className="font-mono text-gray-900">
+                {invoice.navSalesOrderNo || "-"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Sales Shipment</p>
+              <p className="font-mono text-gray-900">
+                {invoice.navShipmentNo || "-"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Invoice (WsPostInvoiceSO)</p>
+              <p className="font-mono text-gray-900">
+                {formatNavInvoiceReturn(invoice) || "-"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Warehouse ready</p>
+              <p className="font-medium text-gray-900">
+                {invoice.warehouseReady ? "Ya" : "Tidak"}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
       {showMeta && (
         <div className="mb-4 md:space-y-2 text-sm">
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-gray-600">
@@ -1041,6 +1132,22 @@ const Invoices = () => {
                         <div className="flex justify-end mt-2">
                           {renderInvoiceActions(invoice)}
                         </div>
+                        {isStatelessView && (
+                          <div className="mt-2 space-y-1 text-xs">
+                            <p className="text-gray-500">
+                              NAV Ship:{" "}
+                              <span className="font-mono text-gray-800 break-all">
+                                {formatNavShipReturn(invoice) || "-"}
+                              </span>
+                            </p>
+                            <p className="text-gray-500">
+                              NAV Invoice:{" "}
+                              <span className="font-mono text-gray-800">
+                                {formatNavInvoiceReturn(invoice) || "-"}
+                              </span>
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
                     {expandedRows[invoice._id] && (
@@ -1123,6 +1230,16 @@ const Invoices = () => {
                       <th className="px-4 py-3 text-center text-xs font-semibold text-blue-800 uppercase tracking-wider">
                         Kwitansi
                       </th>
+                      {isStatelessView && (
+                        <>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-blue-800 uppercase tracking-wider min-w-[12rem]">
+                            NAV Ship Return
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-blue-800 uppercase tracking-wider">
+                            NAV Invoice
+                          </th>
+                        </>
+                      )}
                       <th className="px-4 py-3 text-center text-xs font-semibold text-blue-800 uppercase tracking-wider">
                         Status
                       </th>
@@ -1244,6 +1361,42 @@ const Invoices = () => {
                               <span className="text-gray-300">-</span>
                             )}
                           </td>
+                          {isStatelessView && (
+                            <>
+                              <td className="px-4 py-3">
+                                {formatNavShipReturn(invoice) ? (
+                                  <div className="space-y-0.5">
+                                    <p
+                                      className="text-xs font-mono text-blue-900 break-all"
+                                      title={formatNavShipReturn(invoice)}
+                                    >
+                                      {formatNavShipReturn(invoice)}
+                                    </p>
+                                    {invoice.warehouseReady && (
+                                      <span className="badge badge-outline badge-xs text-emerald-700 border-emerald-300">
+                                        warehouse ready
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-gray-300 text-xs">
+                                    -
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3">
+                                {formatNavInvoiceReturn(invoice) ? (
+                                  <span className="text-xs font-mono text-gray-800">
+                                    {formatNavInvoiceReturn(invoice)}
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-300 text-xs">
+                                    -
+                                  </span>
+                                )}
+                              </td>
+                            </>
+                          )}
                           <td className="px-4 py-3 text-center">
                             <span
                               className={`badge rounded-full px-3 py-2 font-medium text-xs ${getInvoiceStatusClass(invoice)}`}
@@ -1259,7 +1412,10 @@ const Invoices = () => {
                         {/* Expanded Detail */}
                         {expandedRows[invoice._id] && (
                           <tr>
-                            <td colSpan="14" className="bg-blue-50/30 p-6">
+                            <td
+                              colSpan={tableColSpan}
+                              className="bg-blue-50/30 p-6"
+                            >
                               {renderInvoiceExpandedDetail(invoice)}
                             </td>
                           </tr>

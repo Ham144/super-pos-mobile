@@ -1,10 +1,10 @@
 export const APP_NAME = "CSI SUPER POS";
 export const APP_DESC = "Sistem POS by CSI untuk penjualan di outlet dan event besar"
 
-const PROD_URL = "https://internal-pos.mycsi.net";
+export const PROD_URL = "http://192.168.169.12:3003";
 const DEV_URL = "http://192.168.21.193:3003";
 
-export const NODE_ENV = window.location.hostname.endsWith("pos.mycsi.net")
+export const NODE_ENV = window.location.hostname.endsWith("192.168.169.12")
   ? "production"
   : "development";
 

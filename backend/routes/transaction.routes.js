@@ -321,7 +321,7 @@ router.post("/step2", checkVoucher, async (req, res) => {
 
     //create kwitansi document dan cetak struknya
 
-    //cetak kwitansi bukti pembayaran
+    //cetak kwitansi invoice pembelian
   } catch (error) {
     return res.status(500).json({ message: "Terjadi kesalahan", error });
   }

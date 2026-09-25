@@ -1,6 +1,9 @@
 import { Router } from "express";
 import LdapClient from "ldapjs-client";
-import generateTokenJWT, { setAuthCookie } from "../utils/generateTokenJWT.js";
+import generateTokenJWT, {
+  authCookieOptions,
+  setAuthCookie,
+} from "../utils/generateTokenJWT.js";
 import generateTokenMobile from "../utils/generateTokenMobile.js";
 import UserRefrensi from "../models/User.model.js";
 import Outlet from "../models/Outlet.model.js";
@@ -738,7 +741,7 @@ router.get("/getUserById/:id", async (req, res) => {
 
 //web
 router.delete("/logout", async (req, res) => {
-  res.clearCookie("token");
+  res.clearCookie("token", authCookieOptions(req));
   return res.json({ message: "Berhasil logout" });
 });
 

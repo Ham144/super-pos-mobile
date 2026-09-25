@@ -5,6 +5,12 @@ import TcpSocket from "react-native-tcp-socket";
 import printerFormatter from "../utils/printerFormatter";
 import { formatCurrency } from "../utils/FormatCurrency.js";
 
+/** Tampilan saja: Total sudah termasuk PPN 11%, SubTotal = harga sebelum pajak. */
+const displaySubTotalExclTax = (inclusiveTotal) =>
+  Math.round(Number(inclusiveTotal || 0) / 1.11);
+
+
+
 export const printTest = async (config) => {
     return new Promise((resolve, reject) => {
       const { ipPrinter, portPrinter, tipePrinter } = config;
@@ -170,6 +176,8 @@ export const printTest = async (config) => {
       paymentMethod,
       customer, //obj
       _id,
+      kodeInvoice,
+      navSalesOrderNo,
     } = bill;
   
     if (!bill) {
@@ -192,7 +200,7 @@ export const printTest = async (config) => {
       message +=
         ESC_ALIGN_CENTER +
         ESC_FONT_SIZE_LARGE +
-        "INVOICE BILL\n\n" +
+        "PRINT BILL\n\n" +
         ESC_FONT_SIZE_NORMAL;
       if (!isFirstTime) {
         message += "-".repeat(45) + "\n";
@@ -200,9 +208,14 @@ export const printTest = async (config) => {
       }
       message += "-".repeat(45) + "\n";
   
-      // Format informasi dengan spasi dinamis
-      const infoBill =
-        `${printerFormatter.formatWithSpace("Ext doc", _id)}\n` +
+      // Ext doc = kodeInvoice (sama dengan ExtDoc yang dikirim ke NAV)
+      const extDoc = kodeInvoice || _id || "-";
+      let infoBill =
+        `${printerFormatter.formatWithSpace("Ext doc", extDoc)}\n`;
+      if (navSalesOrderNo) {
+        infoBill += `${printerFormatter.formatWithSpace("SO", navSalesOrderNo)}\n`;
+      }
+      infoBill +=
         `${printerFormatter.formatWithSpace("Waktu Print", time)}\n` +
         `${printerFormatter.formatWithSpace("Nama Customer", customer?.name || "UNKNOWN")}\n` +
         `${printerFormatter.formatWithSpace("Kasir", salesPerson)}\n` +
@@ -301,7 +314,7 @@ export const printTest = async (config) => {
       message += printerFormatter.formatColumns(
         "SUBTOTAL",
         "",
-        `Rp ${subTotal.toLocaleString("id-ID")}`,
+        `Rp ${displaySubTotalExclTax(total).toLocaleString("id-ID")}`,
       );
       message += "\n";
       message += printerFormatter.formatColumns(
@@ -477,6 +490,10 @@ export const printTest = async (config) => {
       nomorTransaksi,
       tanggalBayar,
       _id,
+      kodeInvoice,
+      navSalesOrderNo,
+      navSalesInvoiceNo,
+      navInvoiceReturnValue,
     } = bill;
   
     if (!bill) {
@@ -499,7 +516,7 @@ export const printTest = async (config) => {
       message +=
         ESC_ALIGN_CENTER +
         ESC_FONT_SIZE_LARGE +
-        "BUKTI PEMBAYARAN\n\n" +
+        "INVOICE PEMBELIAN\n\n" +
         ESC_FONT_SIZE_NORMAL;
       message += "-".repeat(45) + "\n";
       message += ESC_FONT_SIZE_NORMAL + "LUNAS\n";
@@ -515,10 +532,24 @@ export const printTest = async (config) => {
       if (tanggalBayar) {
         tanggalBayarStr = exactTimeFormatterReadable(tanggalBayar);
       }
+      const extDoc = kodeInvoice || _id || "-";
+      const siNumber =
+        navSalesInvoiceNo ||
+        (navInvoiceReturnValue
+          ? String(navInvoiceReturnValue).split(";")[0].trim()
+          : "") ||
+        "";
       let infoBill = "";
       // Format informasi dengan spasi dinamis
       infoBill +=
-        `${printerFormatter.formatWithSpace("Ext doc", _id)}\n` +
+        `${printerFormatter.formatWithSpace("Ext doc", extDoc)}\n`;
+      if (navSalesOrderNo) {
+        infoBill += `${printerFormatter.formatWithSpace("SO", navSalesOrderNo)}\n`;
+      }
+      if (siNumber) {
+        infoBill += `${printerFormatter.formatWithSpace("SI", siNumber)}\n`;
+      }
+      infoBill +=
         `${printerFormatter.formatWithSpace(
           "Waktu Pembayaran",
           tanggalBayarStr || time,
@@ -631,7 +662,7 @@ export const printTest = async (config) => {
       message += printerFormatter.formatColumns(
         "SUBTOTAL",
         "",
-        `Rp ${subTotal.toLocaleString("id-ID")}`,
+        `Rp ${displaySubTotalExclTax(total).toLocaleString("id-ID")}`,
       );
       message += "\n";
       message += printerFormatter.formatColumns(

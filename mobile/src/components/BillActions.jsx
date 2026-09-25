@@ -17,7 +17,7 @@ export const BillActions = ({
   setIsShowPaymentMethodModal,
 }) => {
   const handleClearSale = () => {
-    if (Platform.OS === "android") {
+    if (Platform.OS === "android" && !done) {
       Alert.alert(
         "Konfirmasi",
         "Bersihkan currentBill dengan data yang terpilih?",

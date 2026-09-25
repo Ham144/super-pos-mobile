@@ -38,6 +38,8 @@ export const useCurrentBill = create((set) => ({
   customerJenisKel: null,
   salesPerson: null, //yg sedang login
   kodeInvoice: "", // Field for formatted invoice code
+  navSalesOrderNo: null, // SO dari NAV setelah cetak bill (ship)
+  navSalesInvoiceNo: null, // SI dari NAV setelah bayar (WsPostInvoiceSO)
   isChanged: true,
   tanggalBayar: null,
   nomorTransaksi: null,
@@ -51,6 +53,8 @@ export const useCurrentBill = create((set) => ({
         ...state,
         _id: savedBill?._id,
         kodeInvoice: savedBill?.kodeInvoice,
+        navSalesOrderNo: savedBill?.navSalesOrderNo || null,
+        navSalesInvoiceNo: savedBill?.navSalesInvoiceNo || null,
         currentBill: savedBill?.currentBill,
         catatan: savedBill?.catatan,
         user: savedBill?.user,
@@ -125,8 +129,17 @@ export const useCurrentBill = create((set) => ({
   createCurrentBill: async (item) => {
     //untuk create bill pertama kali
     try {
-      // Format kodeInvoice: [outlet][kasir][YYMMDDHHmmss] — unik per detik
+      // kodeInvoice: outlet(2) + kasir(3) + HHmmss(6) → 11
       const now = new Date();
+      const hhmmss =
+        String(now.getHours()).padStart(2, "0") +
+        String(now.getMinutes()).padStart(2, "0") +
+        String(now.getSeconds()).padStart(2, "0");
+      const timestamp =
+        String(now.getFullYear()).slice(-2) +
+        String(now.getMonth() + 1).padStart(2, "0") +
+        String(now.getDate()).padStart(2, "0") +
+        hhmmss;
 
       // Get outlet and user info once
       let outletCode, kodeKasir, salesPerson;
@@ -155,16 +168,6 @@ export const useCurrentBill = create((set) => ({
           await AsyncStorage.setItem("outlet", JSON.stringify(zustandOutlet));
         }
 
-        const [year, month, date, hours, minutes, seconds] = [
-          String(now.getFullYear()).slice(-2), // tahun 2 digit
-          String(now.getMonth() + 1).padStart(2, "0"), // bulan mulai dari 0
-          String(now.getDate()).padStart(2, "0"),
-          String(now.getHours()).padStart(2, "0"),
-          String(now.getMinutes()).padStart(2, "0"),
-          String(now.getSeconds()).padStart(2, "0"),
-        ];
-
-        const timestamp = `${year}${month}${date}${hours}${minutes}${seconds}`;
 
         const randomId = `${outletCode}-${salesPerson}-${timestamp}`;
         // Validate required data
@@ -184,9 +187,10 @@ export const useCurrentBill = create((set) => ({
           return;
         }
 
-        // Unik per transaksi (index Mongo kodeInvoice unique).
-        // Format lama outlet+kasir+YYMM bentrok tiap bill di bulan yang sama.
-        const kodeInvoice = `${outletCode}${kodeKasir}${timestamp}`;
+        // Unik per detik per kasir. ExtDoc NAV max 20; format ini 11.
+        const kodeInvoice = `${String(outletCode).slice(0, 2)}${String(kodeKasir).slice(0, 3)}${hhmmss}`;
+
+
 
         // Set all state at once in a single update
         set({
@@ -275,6 +279,8 @@ export const useCurrentBill = create((set) => ({
     set({
       _id: "",
       kodeInvoice: "",
+      navSalesOrderNo: null,
+      navSalesInvoiceNo: null,
       currentBill: [],
       catatan: "",
       salesPerson: "",
@@ -333,6 +339,8 @@ export const useCurrentBill = create((set) => ({
   setPaymentMethod: (method) => set({ paymentMethod: method }),
   setSpg: (spg) => set({ spg }),
   setNomorTransaksi: (nomorTransaksi) => set({ nomorTransaksi }),
+  setNavSalesOrderNo: (navSalesOrderNo) => set({ navSalesOrderNo }),
+  setNavSalesInvoiceNo: (navSalesInvoiceNo) => set({ navSalesInvoiceNo }),
   setImplementedVoucher: (obj) =>
     set((state) => ({
       implementedVoucher: [...state.implementedVoucher, obj],

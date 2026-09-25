@@ -4,6 +4,7 @@ import {
   CharacterSet,
   BreakLine,
 } from "node-thermal-printer";
+import { indonesianTaxation } from "./indonesianTaxation.js";
 
 // Helper function to format currency in Indonesian Rupiah
 const formatCurrency = (amount) => {
@@ -13,6 +14,8 @@ const formatCurrency = (amount) => {
     minimumFractionDigits: 0,
   }).format(amount);
 };
+
+/** Tampilan saja: Total sudah termasuk PPN 11%. */
 
 export const testPrintToThermalPrinter = async ({ ip, port, printerModel }) => {
   // Initialize the printer
@@ -71,8 +74,8 @@ export const printToThermalPrinterCetakBillCustomer = async ({
   diskons,
   promos,
   futureVouchers,
-  subtotal,
-  total,
+  subtotal, // raw belum diskon, termasuk tax
+  total, // telah diskon + tax
   currentBill,
   _id,
   customerName,
@@ -82,6 +85,7 @@ export const printToThermalPrinterCetakBillCustomer = async ({
   time,
   customerEmail,
   kodeInvoice,
+  navSalesOrderNo,
 }) => {
   // return true;
   // Initialize the printer
@@ -126,7 +130,7 @@ export const printToThermalPrinterCetakBillCustomer = async ({
     // Header (tidak diubah)
     printer.alignCenter();
     printer.setTextSize(1, 1);
-    printer.println("INVOICE BILL");
+    printer.println("PRINT BILL");
     printer.setTextSize(0, 0);
     printer.println("-".repeat(maxLength));
     printer.println("THIS IS A COPY");
@@ -134,9 +138,13 @@ export const printToThermalPrinterCetakBillCustomer = async ({
     printer.alignLeft();
     printer.newLine();
 
-    // Detail Customer (tidak diubah)
+    // Detail Customer
     printer.setTextSize(0, 0);
     printer.leftRight("WAKTU", time || "-");
+    printer.leftRight("Ext doc", kodeInvoice || _id || "-");
+    if (navSalesOrderNo) {
+      printer.leftRight("SO", navSalesOrderNo);
+    }
     printer.leftRight("NAMA PEMBELI", customerName || "-");
     printer.leftRight("KASIR", salesPerson || "-");
     printer.leftRight("SPG", spg?.name || "-");
@@ -181,7 +189,8 @@ export const printToThermalPrinterCetakBillCustomer = async ({
       // Format main item line
       const left = item?.description;
       const middle = `${item?.quantity}x`;
-      const right = formatCurrency(item?.totalRp / item?.quantity);
+      const unitIncl = Number(item?.totalRp) / (Number(item?.quantity) || 1);
+      const right = formatCurrency(indonesianTaxation.getZeroTax(unitIncl));
       printer.println(formatColumns(left, middle, right));
 
       // Handle discounts
@@ -190,7 +199,9 @@ export const printToThermalPrinterCetakBillCustomer = async ({
       if (relatedDiskons.length) {
         for (const diskon of relatedDiskons) {
           const potongan = diskon?.diskonInfo.RpPotonganHarga
-            ? formatCurrency(diskon.diskonInfo.RpPotonganHarga)
+            ? formatCurrency(
+                indonesianTaxation.getZeroTax(diskon.diskonInfo.RpPotonganHarga),
+              )
             : `${diskon.voucherInfo.potongan.$numberDecimal * 100}%`;
           printer.println(formatColumns("    Potongan", "", potongan));
         }
@@ -227,12 +238,14 @@ export const printToThermalPrinterCetakBillCustomer = async ({
       printer.newLine(); // Space between items
     }
 
-    // Footer (Subtotal, Total, dll.)
+    // Footer: Subtotal (DPP) + PPN + Total (inclusive, setelah diskon)
     printer.alignCenter();
     printer.println("-".repeat(maxLength));
     printer.alignLeft();
-    printer.leftRight("Subtotal", formatCurrency(subtotal));
-    printer.leftRight("Total", formatCurrency(total));
+    const amounts = indonesianTaxation.buildReceiptAmounts(total);
+    printer.leftRight("Subtotal", formatCurrency(amounts.subtotalExclTax));
+    printer.leftRight("PPN 11%", formatCurrency(amounts.tax));
+    printer.leftRight("Total", formatCurrency(amounts.total));
     printer.alignCenter();
     printer.newLine();
     printer.println("-".repeat(maxLength));
@@ -266,8 +279,8 @@ export const printToThermalPrinterCetakKwitansi = async ({
   diskons,
   promos,
   futureVouchers,
-  subtotal,
-  total,
+  subtotal, // raw belum diskon, termasuk tax
+  total, // telah diskon + tax
   currentBill,
   _id,
   customerName,
@@ -277,6 +290,9 @@ export const printToThermalPrinterCetakKwitansi = async ({
   time,
   customerEmail,
   kodeInvoice,
+  navSalesOrderNo,
+  navSalesInvoiceNo,
+  navInvoiceReturnValue,
 }) => {
   if (!kodeInvoice) {
     console.log("kode invoice tidak diberikan, sehingga gagal mencetak logo");
@@ -323,7 +339,7 @@ export const printToThermalPrinterCetakKwitansi = async ({
 
     printer.alignCenter();
     printer.setTextSize(1, 1);
-    printer.println("Bukti Pembayaran");
+    printer.println("INVOICE PEMBELIAN");
     printer.setTextSize(0, 0);
     printer.println("-".repeat(maxLength));
     printer.println("LUNAS");
@@ -331,9 +347,21 @@ export const printToThermalPrinterCetakKwitansi = async ({
     printer.alignLeft();
     printer.newLine();
 
-    // Detail Customer (tidak diubah)
+    // Detail Customer
     printer.setTextSize(0, 0);
     printer.leftRight("Time", time || "-");
+    printer.leftRight("Ext doc", kodeInvoice || _id || "-");
+    if (navSalesOrderNo) {
+      printer.leftRight("SO", navSalesOrderNo);
+    }
+    const siNumber =
+      navSalesInvoiceNo ||
+      (navInvoiceReturnValue
+        ? String(navInvoiceReturnValue).split(";")[0].trim()
+        : "");
+    if (siNumber) {
+      printer.leftRight("SI", siNumber);
+    }
     printer.leftRight("Customer Name", customerName || "-");
     printer.leftRight("Kasir", salesPerson || "-");
     printer.leftRight("spg ", spg?.name || "-");
@@ -378,7 +406,8 @@ export const printToThermalPrinterCetakKwitansi = async ({
       // Format main item line
       const left = item.description;
       const middle = `${item.quantity}x`;
-      const right = formatCurrency(item.totalRp / item.quantity);
+      const unitIncl = Number(item?.totalRp) / (Number(item?.quantity) || 1);
+      const right = formatCurrency(indonesianTaxation.getZeroTax(unitIncl));
       printer.println(formatColumns(left, middle, right));
 
       // Handle discounts
@@ -387,7 +416,9 @@ export const printToThermalPrinterCetakKwitansi = async ({
       if (relatedDiskons.length) {
         for (const diskon of relatedDiskons) {
           const potongan = diskon?.diskonInfo.RpPotonganHarga
-            ? formatCurrency(diskon.diskonInfo.RpPotonganHarga)
+            ? formatCurrency(
+                indonesianTaxation.getZeroTax(diskon.diskonInfo.RpPotonganHarga),
+              )
             : `${diskon.voucherInfo.potongan.$numberDecimal * 100}%`;
           printer.println(formatColumns("    Potongan", "", potongan));
         }
@@ -424,12 +455,14 @@ export const printToThermalPrinterCetakKwitansi = async ({
       printer.newLine(); // Space between items
     }
 
-    // Footer (Subtotal, Total, dll.)
+    // Footer: Subtotal (DPP) + PPN + Total (inclusive, setelah diskon)
     printer.alignCenter();
     printer.println("-".repeat(maxLength));
     printer.alignLeft();
-    printer.leftRight("Subtotal", formatCurrency(subtotal));
-    printer.leftRight("Total", formatCurrency(total));
+    const amounts = indonesianTaxation.buildReceiptAmounts(total);
+    printer.leftRight("Subtotal", formatCurrency(amounts.subtotalExclTax));
+    printer.leftRight("PPN 11%", formatCurrency(amounts.tax));
+    printer.leftRight("Total", formatCurrency(amounts.total));
     printer.alignCenter();
     printer.newLine();
     printer.println("-".repeat(maxLength));

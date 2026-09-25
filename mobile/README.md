@@ -20,9 +20,12 @@ npx expo run:android
 
 //untuk build production begini :
 npx expo prebuild --platform android
-npm run bundlejs
-cd android > ./gradlew assembleRelease
+cd android
+.\gradlew.bat assembleRelease "-PreactNativeArchitectures=armeabi-v7a,arm64-v8a"
 adb install -r app\build\outputs\apk\release\app-release.apk
+(jangan jalankan npm run bundlejs sebelum assembleRelease: bundle sudah dibuat otomatis oleh gradle.
+ kalau muncul error EXPO_ROUTER_APP_ROOT, reset cache metro:
+ npx expo export:embed --platform android --dev false --entry-file node_modules/expo-router/entry.js --bundle-output ..\tmp.bundle --reset-cache)
 
 //untuk update code langsung tanpa reinstall
 eas update --branch production --platform android --message "Tes sinkronisasi final"
@@ -62,12 +65,26 @@ Bill Offline punya outlet lain (atasi pakai fitur perbarui inventory seluruhnya 
 [x]edit quantity dari /item_library sudah dimatikan sekarang harus dari PO receive
 [x]set kwitansi true terlewat
 [x]cari kesalahan fungsi aggregate perubahan quantity
-[] kalau outlet nya diganti, kasih peringatan (seseorang mengganti outletmu, setelah sync terkahir kamu akan logout otomatis)
+[x] kalau outlet nya diganti, kasih peringatan (seseorang mengganti outletmu, setelah sync terkahir kamu akan logout otomatis)
 [x] perbaiki masuk bulk upload csv \_id nya
 [x] add: config printer harusnya nempel di outlet sebagai array yang bisa dipilih
+[x] penyesuaian industri: 
+    - rename bukti pembayaran -> INV PEMBELIAN
+    - rename invoice bill -> PRINT BILL
+[x] perubahan PRINT BILL:
+kode invoice == extDoc
+SO dibawah kode invoice
+[x]perubahan INV PEMBELIAN:
+keluarkan SI number
+
+LOC-HH-MM-
+
 
 update code javascript dan UI tanpa reinstall pakai lib expo-updates
 tanpa reinstall : eas update --branch production --message "Perbaikan UI dan logika printer"
+atau: npm run patch (set environment=production lalu eas update branch production)
+app clone ini: package com.csi.superpos, EAS project @mastermind144/csi-super-pos, channel production.
+OTA hanya masuk ke APK dengan runtimeVersion sama (1.0.0). Ganti native module / runtimeVersion = build APK ulang.
 
 
 note: 

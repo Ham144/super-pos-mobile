@@ -103,8 +103,9 @@ const invoiceSchema = new mongoose.Schema(
     ],
     isPrintedCustomerBilling: Boolean,
     isPrintedKwitansi: Boolean,
-    customer: {
-      type: String, //email sebagai fk
+    customer:{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Customer"
     },
     salesPerson: {
       //kasir atau org yg login di mobile
@@ -152,6 +153,7 @@ const invoiceSchema = new mongoose.Schema(
     },
     navDocumentNo: String,
     navSalesOrderNo: String,
+    navSalesInvoiceNo: String,
     navShipmentNo: String,
     navShipments: [
       {
@@ -194,4 +196,4 @@ const invoiceSchema = new mongoose.Schema(
 // Register Invoice model
 const Invoice = mongoose.model("Invoice", invoiceSchema);
 
-export default Invoice;
+export default Invoice; 

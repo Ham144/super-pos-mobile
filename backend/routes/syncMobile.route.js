@@ -4,7 +4,6 @@ import DaftarPromo from "../models/DaftarPromo.model.js";
 import DaftartDiskon from "../models/DaftarDiskon.model.js";
 import DaftarVoucher from "../models/DaftarVoucher.model.js";
 import SpgRefrensi from "../models/SpgRefrensi.model.js";
-import Pelanggan from "../models/Pelanggan.model.js";
 import Invoice from "../models/invoice.model.js";
 import UserRefrensi from "../models/User.model.js";
 import Outlet from "../models/Outlet.model.js";
@@ -13,6 +12,7 @@ import BrandRefrensi from "../models/brand.model.js";
 import GeneratedVoucher from "../models/GeneratedVoucher.model.js";
 import { stackTracingSku } from "../utils/stackTracingSku.js";
 import authenticate from "../middlewares/authenticate.js";
+import Customer from "../models/Customer.model.js";
 
 const router = Router();
 
@@ -89,14 +89,14 @@ router.post("/sync-offline-mode", authenticate, async (req, res) => {
         return;
       }
 
-      // buat dulu pelanggan biar dapat id
+      // buat dulu customer biar dapat id
       let customer;
       if (
         bill?.customer?.email != "" &&
         bill?.customer?.email != null &&
         bill?.customer?.name != null
       ) {
-        customer = await Pelanggan.findOneAndUpdate(
+        customer = await Customer.findOneAndUpdate(
           { email: bill?.customer?.email },
           {
             name: bill?.customer?.name,
@@ -257,19 +257,11 @@ router.post("/sync-offline-mode", authenticate, async (req, res) => {
 
           const INCcodeInvoice = outletUpdate.jumlahInvoice;
 
-          // Prefix = kodeOutlet + kodeKasir + YYMM (panjang dinamis, bukan hardcode 9)
-          // Fallback: pakai kodeInvoice mobile apa adanya + nomor urut
-          let kodeInvoicePrefix = bill.kodeInvoice;
-          const kasirLen = 3;
-          const yymmLen = 4;
-          const expectedPrefixLen = kodeOutlet.length + kasirLen + yymmLen;
-          if (kodeInvoicePrefix.length > expectedPrefixLen) {
-            kodeInvoicePrefix = kodeInvoicePrefix.substring(0, expectedPrefixLen);
-          }
-
+          // Pakai kodeInvoice mobile: outlet(2)+kasir(3)+HHmmss(6) = 11
           const newKodeInvoice =
-            kodeInvoicePrefix + INCcodeInvoice.toString().padStart(5, "0");
-          console.log("Membuat kode invoice baru:", newKodeInvoice);
+            String(bill.kodeInvoice || "").trim() ||
+            `${String(kodeOutlet).slice(0, 2)}UNK${String(INCcodeInvoice).slice(-6).padStart(6, "0")}`;
+          console.log("Memakai kode invoice mobile:", newKodeInvoice);
 
           // Cek apakah kode invoice sudah digunakan
           const invoiceWithSameCode = await Invoice.findOne({
@@ -288,8 +280,9 @@ router.post("/sync-offline-mode", authenticate, async (req, res) => {
             );
 
             const newINCcodeInvoice = outletUpdateRetry.jumlahInvoice;
-            const retryKodeInvoice =
-              kodeInvoicePrefix + newINCcodeInvoice.toString().padStart(5, "0");
+            const retryKodeInvoice = `${newKodeInvoice.slice(0, 11)}${String(
+              newINCcodeInvoice % 100,
+            ).padStart(2, "0")}`;
             console.log("Mencoba dengan kode invoice baru:", retryKodeInvoice);
 
             // Buat invoice baru dengan kode yang sudah diperbaiki
@@ -466,9 +459,9 @@ router.post("/sync-offline-mode", authenticate, async (req, res) => {
             });
           }
 
-          // Update Customer/pelanggan
+          // Update Customer
           if (bill?.customer?.email) {
-            await Pelanggan.findOneAndUpdate(
+            await Customer.findOneAndUpdate(
               { email: bill?.customer?.email },
               {
                 $set: {
@@ -927,7 +920,7 @@ router.post("/sync-offline-mode", authenticate, async (req, res) => {
           queryForInventory,
         ).sort({ updatedAt: -1 });
 
-        const limitedNewCustomerList = await Pelanggan.find()
+        const limitedNewCustomerList = await Customer.find()
           .sort({ updatedAt: -1 })
           .limit(50);
 

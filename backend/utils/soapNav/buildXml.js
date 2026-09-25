@@ -210,9 +210,6 @@ export const buildSoapXml = (operationKey, payload = {}) => {
         .slice(0, 3)
         .map((i) => i.itemNo || i.sku)
         .join(", ");
-      console.log(
-        `[SOAP NAV] ${operationKey} items=${n} loc=${payload?.locationCode || ""} ${sample}`,
-      );
     } else {
       const divider = "=".repeat(20);
       console.log(

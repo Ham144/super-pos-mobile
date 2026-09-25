@@ -59,7 +59,7 @@ export const sendWhatsappByFonnte = async (
     {
       target: phone,
       phone,
-      message: String(message).trim(),
+      message: `${message}`,
     },
     {
       headers: {

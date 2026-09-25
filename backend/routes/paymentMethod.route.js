@@ -6,8 +6,19 @@ import {
   createPaymentTransaction,
   getMidtransTransactionStatus,
   isMidtransPaymentSuccessful,
+  isMidtransProduction,
   verifyMidtransNotificationSignature,
 } from "../utils/midtrans.js";
+import { sendWhatsappByFonnte } from "../utils/whatsappSender.js";
+import Customer from "../models/Customer.model.js";
+
+const safeMidtransEnvLabel = () => {
+  try {
+    return isMidtransProduction() ? "production" : "sandbox";
+  } catch {
+    return "server key kosong";
+  }
+};
 
 export const router = Router();
 
@@ -292,7 +303,7 @@ const validateInvoiceForMidtrans = async (invoice) => {
 
 const applyMidtransStatus = async (notification) => {
   const orderId = notification.order_id;
-  const invoice = await Invoice.findOne({ "paymentGateway.orderId": orderId });
+  const invoice = await Invoice.findOne({ "paymentGateway.orderId": orderId }).populate(['customer']);
   if (!invoice) return null;
 
   const expectedAmount = Number(invoice.paymentGateway?.grossAmount);
@@ -330,11 +341,40 @@ const applyMidtransStatus = async (notification) => {
     update.$set.nomorTransaksi = notification.transaction_id || orderId;
   }
 
-  return Invoice.findOneAndUpdate(
+  await Invoice.findOneAndUpdate(
     { _id: invoice._id, "paymentGateway.orderId": orderId },
     update,
     { new: true },
   );
+  
+  const updated = await Invoice.findOneAndUpdate(
+    { _id: invoice._id, "paymentGateway.orderId": orderId },
+    update,
+    { new: true },
+  ).populate("customer");
+  
+  // Hanya kirim saat baru lunas (hindari spam kalau notification Midtrans berulang)
+  if (
+    gatewayStatus === MIDTRANS_PAID &&
+    invoice.paymentGateway?.status !== MIDTRANS_PAID
+  ) {
+    try {
+      const cust = updated?.customer;
+      if (cust?.phone) {
+        const message = `Halo *${cust.name}*, pembayaran invoice *${updated.kodeInvoice}* berhasil. Total: Rp ${Number(updated.total).toLocaleString("id-ID")}. Terima kasih.`;
+        const wa = await sendWhatsappByFonnte(cust.phone, message);
+        if (wa?.status === true || wa?.status === "true") {
+          await Customer.findByIdAndUpdate(cust._id, {
+            $set: { phoneIsVerified: true },
+          });
+        }
+      }
+    } catch (waErr) {
+      console.error("WA pembayaran gagal:", waErr.message);
+    }
+  }
+  
+  return updated;
 };
 
 const sendPaymentStatus = (res, invoice) => {
@@ -447,10 +487,16 @@ const createMidtransTransaction = async (req, res) => {
       data: { token: transaction.token, redirectUrl: transaction.redirect_url, orderId },
     });
   } catch (error) {
-    console.error("Gagal membuat transaksi Midtrans:", error);
+    console.error(
+      `Gagal membuat transaksi Midtrans (env: ${safeMidtransEnvLabel()}, http: ${error?.httpStatusCode ?? "-"}):`,
+      error,
+    );
     // Once a request reached Midtrans, an uncertain network/storage failure must
     // remain locked. Retrying with a new order could charge the customer twice.
-    if (!externalRequestStarted && (invoiceId || kodeInvoice)) {
+    // A 4xx from Midtrans is a definite rejection (no transaction created), so it's safe to unlock.
+    const httpStatus = Number(error?.httpStatusCode);
+    const rejectedByMidtrans = httpStatus >= 400 && httpStatus < 500;
+    if ((!externalRequestStarted || rejectedByMidtrans) && (invoiceId || kodeInvoice)) {
       await Invoice.findOneAndUpdate(
         invoiceId ? { _id: invoiceId, "paymentGateway.status": MIDTRANS_CREATING } : { kodeInvoice, "paymentGateway.status": MIDTRANS_CREATING },
         { $set: { "paymentGateway.status": "failed" } },

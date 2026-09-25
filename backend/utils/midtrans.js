@@ -9,8 +9,17 @@ const getServerKey = () => {
   return serverKey;
 };
 
+// Key sandbox Midtrans berawalan "SB-" dan hanya valid di endpoint sandbox,
+// jadi environment mengikuti key, bukan NODE_ENV. MIDTRANS_IS_PRODUCTION=true/false untuk memaksa.
+export const isMidtransProduction = () => {
+  const override = process.env.MIDTRANS_IS_PRODUCTION;
+  if (override === "true") return true;
+  if (override === "false") return false;
+  return !getServerKey().startsWith("SB-");
+};
+
 const getClientConfig = () => ({
-  isProduction: process.env.NODE_ENV === "production",
+  isProduction: isMidtransProduction(),
   serverKey: getServerKey(),
   clientKey: process.env.PAYMENT_MIDTRANS_CLIENT_KEY || "unused-by-server",
 });

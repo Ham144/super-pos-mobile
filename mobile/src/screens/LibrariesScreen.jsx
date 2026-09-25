@@ -10,6 +10,7 @@ import {
   AppState,
 } from "react-native";
 import RegisterInvoice from "../components/RegisterInvoice";
+import AddItemLockOverlay from "../components/AddItemLockOverlay";
 import { Plus } from "lucide-react-native";
 import {
   useCurrentBill,
@@ -347,6 +348,7 @@ const LibrariesScreen = () => {
           key={"searchbardanfilternya"}
         />
       </View>
+      <View className="flex-1">
       <FlatList
         data={filteredInventories}
         contentContainerStyle={{ paddingBottom: 10, paddingTop: 50 }}
@@ -490,6 +492,8 @@ const LibrariesScreen = () => {
         windowSize={5}
         removeClippedSubviews={true}
       />
+      <AddItemLockOverlay />
+      </View>
 
       <RegisterInvoice />
       {isShowOptionsInventories && (

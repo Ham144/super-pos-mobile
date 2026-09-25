@@ -1,4 +1,4 @@
-import { mockPages, mockBackend } from "@/api/constant";
+import { mockPages, mockBackend, PROD_URL } from "@/api/constant";
 
 export default function About() {
   return (
@@ -20,9 +20,9 @@ export default function About() {
         <meta property="og:type" content="website" />
         <meta
           property="og:url"
-          content="https://internal-pos.mycsi.net/about"
+          content={`${PROD_URL}/about`}
         />
-        <link rel="canonical" href="https://internal-pos.mycsi.net/about" />
+        <link rel="canonical" href={`${PROD_URL}/about`} />
 
       <main className="container mx-auto p-6">
         <div className="bg-base-100 p-8 rounded-2xl shadow-lg border border-base-300">

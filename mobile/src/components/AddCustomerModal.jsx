@@ -455,8 +455,6 @@ const CustomerFormModal = ({
                       "Name",
                       "Email",
                       "Phone",
-                      "Address",
-                      "Gender",
                       "Action",
                     ].map((header) => (
                       <Text key={header} style={styles.headerText}>

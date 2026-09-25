@@ -4,11 +4,13 @@ export const environment = "production";
 // export const environment = "development";
 
 export const BACKEND_URLS = {
-  production: "https://pos.mycsi.net",
+  production: "http://192.168.169.12:3003",
   development: "http://192.168.21.193:3003",
 };
 
 export const BASE_URL = BACKEND_URLS[environment];
+
+
 
 export const APP_NAME = "CSI SUPER POS";
 export const APP_DESC =

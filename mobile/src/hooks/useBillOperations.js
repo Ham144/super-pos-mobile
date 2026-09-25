@@ -88,16 +88,18 @@ const rekeyBillIdentityIfNeeded = async (outlet) => {
   }
 
   const now = new Date();
+  const hhmmss =
+    String(now.getHours()).padStart(2, "0") +
+    String(now.getMinutes()).padStart(2, "0") +
+    String(now.getSeconds()).padStart(2, "0");
   const timestamp =
     String(now.getFullYear()).slice(-2) +
     String(now.getMonth() + 1).padStart(2, "0") +
     String(now.getDate()).padStart(2, "0") +
-    String(now.getHours()).padStart(2, "0") +
-    String(now.getMinutes()).padStart(2, "0") +
-    String(now.getSeconds()).padStart(2, "0");
+    hhmmss;
 
   const nextId = `${kodeOutlet}-${salesPerson}-${timestamp}`;
-  const nextKodeInvoice = `${kodeOutlet}${kodeKasir}${timestamp}`;
+  const nextKodeInvoice = `${String(kodeOutlet).slice(0, 2)}${String(kodeKasir).slice(0, 3)}${hhmmss}`;
 
   useCurrentBill.setState({
     _id: nextId,
@@ -642,6 +644,8 @@ export const useBillOperations = ({
         tanggalBayar: tanggalBayar || new Date().toISOString(),
         nomorTransaksi: nomorTransaksiOverride || nomorTransaksi,
         implementedVoucher: implementedVoucher,
+        navSalesOrderNo: liveBill.navSalesOrderNo || null,
+        navSalesInvoiceNo: liveBill.navSalesInvoiceNo || null,
       };
 
       // Cek apakah bill dengan ID ini sudah ada
@@ -764,6 +768,7 @@ export const useBillOperations = ({
         paymentMethod,
         kodeInvoice: billKodeInvoice,
         tanggalBayar: tanggalBayar,
+        navSalesOrderNo: useCurrentBill.getState().navSalesOrderNo || null,
       };
 
       //validasi data bill
@@ -857,6 +862,16 @@ export const useBillOperations = ({
 
           // Ship OK → stok NAV berubah; Libraries harus refetch (no cache)
           useLiveStockRevision.getState().bumpLiveStock();
+
+          const soNo =
+            navResult?.invoice?.navSalesOrderNo ||
+            (navResult?.soap?.returnValue
+              ? String(navResult.soap.returnValue).split(";")[0].trim()
+              : null);
+          if (soNo) {
+            useCurrentBill.getState().setNavSalesOrderNo(soNo);
+            bill.navSalesOrderNo = soNo;
+          }
         } catch (error) {
           const msg =
             error?.response?.data?.message ||
@@ -1073,6 +1088,7 @@ export const useBillOperations = ({
 
         const time = excactTimeString(); //untuk waktu cetak
 
+        const liveNav = useCurrentBill.getState();
         const bill = {
           _id,
           kodeInvoice,
@@ -1092,6 +1108,8 @@ export const useBillOperations = ({
           paymentMethod,
           nomorTransaksi: paymentReference || nomorTransaksi,
           tanggalBayar: tanggalBayar,
+          navSalesOrderNo: liveNav.navSalesOrderNo || null,
+          navSalesInvoiceNo: liveNav.navSalesInvoiceNo || null,
         };
 
         //validasi data bill
@@ -1156,13 +1174,29 @@ export const useBillOperations = ({
           // Stateless: post invoice to NAV before printing receipt
           if (outlet?.mode === "stateless" && !done) {
             try {
-              await bayarStateless({
+              const bayarResult = await bayarStateless({
                 invoiceId: _id,
                 paymentMethod,
                 nomorTransaksi: paymentReference || nomorTransaksi,
                 tanggalBayar: tanggalBayar || new Date().toISOString(),
                 outletId: outlet?._id || null,
               });
+              const siNo =
+                bayarResult?.invoice?.navSalesInvoiceNo ||
+                bayarResult?.soap?.salesInvoiceNo ||
+                (bayarResult?.soap?.returnValue
+                  ? String(bayarResult.soap.returnValue).split(";")[0].trim()
+                  : null);
+              if (siNo) {
+                useCurrentBill.getState().setNavSalesInvoiceNo(siNo);
+                bill.navSalesInvoiceNo = siNo;
+              }
+              if (bayarResult?.invoice?.navSalesOrderNo) {
+                useCurrentBill
+                  .getState()
+                  .setNavSalesOrderNo(bayarResult.invoice.navSalesOrderNo);
+                bill.navSalesOrderNo = bayarResult.invoice.navSalesOrderNo;
+              }
             } catch (navErr) {
               const msg =
                 navErr?.response?.data?.message ||
