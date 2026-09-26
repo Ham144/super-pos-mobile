@@ -286,8 +286,6 @@ export const mapInvoiceToSalesOrderPayload = (
       ? invoice.spg?.name || invoice.spg?.kode || invoice.salesPerson
       : invoice.spg || invoice.salesPerson || "";
 
-  const sellToContact =
-    invoice.customer?.name || defaults.sellToCustName || "";
 
   return {
     header: {
@@ -301,7 +299,7 @@ export const mapInvoiceToSalesOrderPayload = (
       dim1: "",
       customerPriceGrp: "",
       salespersonCode: toNavDocumentNo(salespersonRaw),
-      sellToContact,
+      sellToContact: "",
       noSeries,
       extDoc: toNavDocumentNo(invoice.kodeInvoice || invoice._id),
     },

@@ -2,13 +2,26 @@ import Outlet from "../models/Outlet.model.js";
 import Soap from "../models/Soap.model.js";
 import Invoice from "../models/invoice.model.js";
 import InventoryRefrensi from "../models/InventoryRefrensi.model.js";
+import mongoose from "mongoose";
 import { executeNavSoap } from "../utils/soapNav/client.js";
 import { createStatelessBillService } from "../utils/statelessBill/statelessTransaction.js";
+import { findOrCreateCustomer } from "../utils/findOrCreateCustomer.js";
 
 const upsertInvoiceDoc = async (payload) => {
   const { _id, ...rest } = payload;
   if (!_id) {
     throw new Error("_id invoice wajib");
+  }
+
+  // Jaga-jaga: jangan $set customer string (CastError ObjectId)
+  if (
+    rest.customer != null &&
+    !(
+      mongoose.Types.ObjectId.isValid(rest.customer) &&
+      String(new mongoose.Types.ObjectId(rest.customer)) === String(rest.customer)
+    )
+  ) {
+    delete rest.customer;
   }
 
   const attemptUpsert = async (kodeInvoice) =>
@@ -69,6 +82,7 @@ export const buildDefaultStatelessBillService = () =>
     findInvoiceById: (id) => Invoice.findById(id).lean(),
     upsertInvoice: upsertInvoiceDoc,
     executeNavSoap,
+    findOrCreateCustomer,
   });
 
 const getService = (req) =>

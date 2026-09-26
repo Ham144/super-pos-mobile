@@ -17,6 +17,7 @@ export const createStatelessBillService = ({
   findInvoiceById,
   upsertInvoice,
   executeNavSoap,
+  findOrCreateCustomer,
 }) => {
   const assertStatelessOutlet = async (outletId) => {
     const outlet = await findOutlet(outletId);
@@ -69,15 +70,8 @@ export const createStatelessBillService = ({
     return map;
   };
 
-  const normalizeBillPayload = (bill, outletId) => {
-    const hasCustomerData = Boolean(
-      bill?.customer?.name ||
-        bill?.customer?.email ||
-        bill?.customer?.phone ||
-        bill?.customer,
-    );
-
-    return {
+  const normalizeBillPayload = (bill, outletId, customerId = undefined) => {
+    const payload = {
       _id: bill._id,
       kodeInvoice: bill.kodeInvoice,
       currentBill: bill.currentBill || [],
@@ -89,11 +83,6 @@ export const createStatelessBillService = ({
       total: bill.total ?? bill.setelahDiskon ?? 0,
       salesPerson: bill.salesPerson,
       spg: typeof bill.spg === "object" ? bill.spg?.id || bill.spg?._id : bill.spg,
-      customer: hasCustomerData
-        ? typeof bill.customer === "string"
-          ? bill.customer
-          : bill.customer?.email || bill.customer?.name || ""
-        : bill.customer || "",
       paymentMethod: bill.paymentMethod,
       nomorTransaksi: bill.nomorTransaksi,
       outlet: outletId,
@@ -102,6 +91,21 @@ export const createStatelessBillService = ({
       done: Boolean(bill.done),
       isVoid: Boolean(bill.isVoid),
     };
+    // Hanya set customer bila ObjectId valid — jangan simpan nama string
+    if (customerId) {
+      payload.customer = customerId;
+    }
+    return payload;
+  };
+
+  const resolveCustomerId = async (bill) => {
+    if (typeof findOrCreateCustomer !== "function") return undefined;
+    try {
+      return (await findOrCreateCustomer(bill?.customer)) || undefined;
+    } catch (error) {
+      console.error("findOrCreateCustomer gagal:", error?.message || error);
+      return undefined;
+    }
   };
 
   /**
@@ -161,7 +165,8 @@ export const createStatelessBillService = ({
     }
 
     const webPriceBySku = await buildWebPriceMap(outletId, bill.currentBill);
-    const normalized = normalizeBillPayload(bill, outletId);
+    const customerId = await resolveCustomerId(bill);
+    const normalized = normalizeBillPayload(bill, outletId, customerId);
     const approvalStatus =
       existing?.discountApprovalStatus || DISCOUNT_APPROVAL_STATUS.NONE;
 
@@ -278,14 +283,8 @@ export const createStatelessBillService = ({
       String(returnValue).toLowerCase() === "true" ||
       Boolean(returnValue);
 
-    const saved = await upsertInvoice({
-      ...(existing || {}),
-      ...normalized,
-      discountApprovalStatus: needsApproval
-        ? DISCOUNT_APPROVAL_STATUS.APPROVED
-        : approvalStatus === DISCOUNT_APPROVAL_STATUS.APPROVED
-          ? DISCOUNT_APPROVAL_STATUS.APPROVED
-          : DISCOUNT_APPROVAL_STATUS.NONE,
+    // Marker NAV dulu — wajib tersimpan supaya cetak ulang tidak ship dobel
+    const navMarkers = {
       navDocumentNo: payload.header.documentNo,
       navSalesOrderNo: navSalesOrderNo || existing?.navSalesOrderNo || null,
       navShipmentNo: navShipmentNo || existing?.navShipmentNo || null,
@@ -307,7 +306,33 @@ export const createStatelessBillService = ({
       navShipReturnValue: returnValue || null,
       isPrintedCustomerBilling: true,
       done: false,
-    });
+    };
+
+    let saved;
+    try {
+      saved = await upsertInvoice({
+        ...(existing || {}),
+        ...normalized,
+        discountApprovalStatus: needsApproval
+          ? DISCOUNT_APPROVAL_STATUS.APPROVED
+          : approvalStatus === DISCOUNT_APPROVAL_STATUS.APPROVED
+            ? DISCOUNT_APPROVAL_STATUS.APPROVED
+            : DISCOUNT_APPROVAL_STATUS.NONE,
+        ...navMarkers,
+      });
+    } catch (saveError) {
+      console.error(
+        "upsert setelah ship gagal, simpan marker NAV saja:",
+        saveError?.message || saveError,
+      );
+      saved = await upsertInvoice({
+        _id: bill._id,
+        kodeInvoice: normalized.kodeInvoice || existing?.kodeInvoice,
+        ...(existing || {}),
+        ...navMarkers,
+        ...(customerId ? { customer: customerId } : {}),
+      });
+    }
 
     return {
       action: "shipped",

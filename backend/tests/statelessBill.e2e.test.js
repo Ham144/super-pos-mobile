@@ -13,8 +13,8 @@ const OUTLET_ID = "outlet-stateless-1";
 const OFFLINE_OUTLET_ID = "outlet-offline-1";
 
 const baseBill = () => ({
-  _id: "bill-e2e-1",
-  kodeInvoice: "01KSR260300001",
+  _id: "LOC-01-ksr-001",
+  kodeInvoice: "LOKSR120001",
   currentBill: [
     {
       sku: "SKU-A",
@@ -73,14 +73,21 @@ const createMemoryDeps = () => {
       invoices.set(payload._id, next);
       return next;
     },
+    findOrCreateCustomer: async (raw) => {
+      if (!raw) return null;
+      if (typeof raw === "object" && raw._id) return String(raw._id);
+      return "cust-mock-1";
+    },
     executeNavSoap: async ({ operationKey, payload }) => {
       soapCalls.push({ operationKey, payload });
 
       if (operationKey === NAV_SOAP_OPERATIONS.SALES_ORDER_AUTO_POSTING_SHIP) {
         return {
           operationKey,
-          parsed: { returnValue: "ready" },
-          response: { body: "<return_value>ready</return_value>" },
+          parsed: { returnValue: "SO/RTL-TEST-1;SS/RTL-TEST-1" },
+          response: {
+            body: "<return_value>SO/RTL-TEST-1;SS/RTL-TEST-1</return_value>",
+          },
         };
       }
 
@@ -116,10 +123,13 @@ const createMemoryDeps = () => {
       }
 
       if (operationKey === NAV_SOAP_OPERATIONS.WS_UNDO_SHIPMENT) {
+        const docNo = payload.docNo;
+        const lineNo = payload.lineNo;
+        const returnValue = `${docNo};${lineNo};SKU-A;1`;
         return {
           operationKey,
-          parsed: { returnValue: "undone" },
-          response: { body: "<return_value>undone</return_value>" },
+          parsed: { returnValue },
+          response: { body: `<return_value>${returnValue}</return_value>` },
         };
       }
 

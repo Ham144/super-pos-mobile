@@ -11,6 +11,7 @@ import {
 } from "../utils/midtrans.js";
 import { sendWhatsappByFonnte } from "../utils/whatsappSender.js";
 import Customer from "../models/Customer.model.js";
+import { findOrCreateCustomer } from "../utils/findOrCreateCustomer.js";
 
 const safeMidtransEnvLabel = () => {
   try {
@@ -224,10 +225,15 @@ const upsertInvoiceFromBillSnapshot = async (bill, outlet) => {
 
   const spgId =
     typeof bill.spg === "object" ? bill.spg?._id || bill.spg?.id : bill.spg;
-  const customerValue =
-    typeof bill.customer === "string"
-      ? bill.customer
-      : bill.customer?.name || bill.customer?.phone || "";
+  let customerId;
+  try {
+    customerId = await findOrCreateCustomer(bill.customer);
+  } catch (error) {
+    console.error(
+      "upsertInvoiceFromBillSnapshot customer:",
+      error?.message || error,
+    );
+  }
 
   const payload = {
     currentBill: Array.isArray(bill.currentBill) ? bill.currentBill : [],
@@ -239,7 +245,6 @@ const upsertInvoiceFromBillSnapshot = async (bill, outlet) => {
     total: Number(bill.total ?? bill.setelahDiskon ?? 0),
     salesPerson: bill.salesPerson,
     spg: spgId ? String(spgId) : "",
-    customer: customerValue,
     paymentMethod: bill.paymentMethod,
     nomorTransaksi: bill.nomorTransaksi,
     outlet: outlet._id,
@@ -248,6 +253,9 @@ const upsertInvoiceFromBillSnapshot = async (bill, outlet) => {
     done: Boolean(bill.done),
     isVoid: Boolean(bill.isVoid),
   };
+  if (customerId) {
+    payload.customer = customerId;
+  }
 
   // Hindari E11000: kodeInvoice unik bisa sudah ada di _id lain (hasil sync)
   const existing =

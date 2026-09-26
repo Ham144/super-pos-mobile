@@ -81,7 +81,10 @@ export const executeNavSoap = async ({
 
   const operation = getEnabledOperation(soapConfig, operationKey);
 
+  
+
   const resolvedPayload = { ...payload };
+  console.log(payload)
   if (operationNeedsLocationCode(operationKey)) {
     resolvedPayload.locationCode = await getResolvedLocationCode(
       outletId,
