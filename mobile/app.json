@@ -1,0 +1,67 @@
+{
+  "expo": {
+    "platforms": [
+      "android"
+    ],
+    "userInterfaceStyle": "light",
+    "orientation": "landscape",
+    "icon": "./src/assets/internal-pos.png",
+    "scheme": "csi-pos",
+    "splash": {
+      "image": "./src/assets/internal-pos.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "android": {
+      "jsEngine": "hermes",
+      "adaptiveIcon": {
+        "foregroundImage": "./src/assets/internal-pos.png",
+        "backgroundColor": "#ffffff"
+      },
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.READ_EXTERNAL_STORAGE"
+      ],
+      "runtimeVersion": "1.0.0",
+      "package": "com.csi.superpos"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-font",
+        {}
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
+    ],
+    "name": "CSI SUPER POS",
+    "slug": "csi-super-pos",
+    "newArchEnabled": true,
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "7014e338-1340-4ef9-9bc1-5e464f3a3107"
+      }
+    },
+    "updates": {
+      "enabled": true,
+      "url": "https://u.expo.dev/7014e338-1340-4ef9-9bc1-5e464f3a3107",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0,
+      "requestHeaders": {
+        "expo-channel-name": "production"
+      }
+    },
+    "runtimeVersion": "1.0.0",
+    "ios": {},
+    "owner": "mastermind144"
+  }
+}

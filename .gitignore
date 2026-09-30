@@ -1,0 +1,7 @@
+/old_backend
+/uploads
+.cursor
+.VSCodeCounter
+*.log
+.package-lock.json
+frontend/.vite-cache/

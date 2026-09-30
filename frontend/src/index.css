@@ -1,0 +1,172 @@
+@import url("https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap");
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Import Google Fonts - Poppins for headers and body text */
+
+:root {
+  transition:
+    background-color 0.3s ease,
+    color 0.3s ease;
+}
+
+/* Header Styles */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: "aldrich", sans-serif;
+  letter-spacing: -0.02em;
+}
+
+h1 {
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+* {
+  font-family: "aldrich", sans-serif;
+  letter-spacing: -0.02em;
+}
+
+.page-title {
+  @apply text-2xl md:text-3xl font-bold text-gray-800;
+  background: linear-gradient(to right, #2c3e50, #3498db);
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 0.5rem;
+}
+
+.page-subtitle {
+  @apply text-sm md:text-base text-gray-600;
+  font-family: "Poppins", sans-serif;
+  font-weight: 400;
+}
+
+* {
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease;
+}
+
+button,
+a {
+  transition:
+    background-color 0.3s ease,
+    color 0.3s ease,
+    border-color 0.3s ease;
+}
+
+/* penentu warna dinamis */
+/* penentu warna dinamis - Blue Theme */
+@layer base {
+  :root {
+    /* Base Colors */
+    --background: 210 40% 98%; /* Soft blue-white background */
+    --foreground: 222.2 84% 4.9%; /* Dark blue-black for text */
+
+    /* Card Colors */
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+
+    /* Popover Colors */
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+
+    /* Primary - Blue */
+    --primary: 221.2 83.2% 53.3%; /* Bright blue */
+    --primary-foreground: 210 40% 98%; /* Almost white */
+
+    /* Secondary - Light Blue */
+    --secondary: 210 40% 96.1%; /* Very light blue */
+    --secondary-foreground: 222.2 47.4% 11.2%; /* Dark blue */
+
+    /* Muted - Subtle Blue Gray */
+    --muted: 210 40% 96.1%; /* Light blue-gray */
+    --muted-foreground: 215.4 16.3% 46.9%; /* Medium blue-gray */
+
+    /* Accent - Vibrant Blue */
+    --accent: 210 40% 94%; /* Light blue for accents */
+    --accent-foreground: 222.2 47.4% 11.2%; /* Dark blue */
+
+    /* Destructive - Red (tetap sama untuk error states) */
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    /* Borders & Inputs */
+    --border: 214.3 31.8% 91.4%; /* Soft blue-gray border */
+    --input: 214.3 31.8% 91.4%; /* Same as border */
+    --ring: 221.2 83.2% 53.3%; /* Primary blue for focus rings */
+
+    /* Chart Colors - Blue-themed palette */
+    --chart-1: 221.2 83.2% 53.3%; /* Primary blue */
+    --chart-2: 210 100% 50%; /* Bright blue */
+    --chart-3: 195 100% 45%; /* Cyan-blue */
+    --chart-4: 235 100% 65%; /* Purple-blue */
+    --chart-5: 175 100% 35%; /* Teal */
+
+    /* Border Radius */
+    --radius: 0.5rem;
+  }
+
+  /* Optional: Dark mode variant */
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 217.2 91.2% 59.8%; /* Lighter blue for dark mode */
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
+  }
+}
+
+/* Optional: Custom utility classes untuk blue theme */
+@layer utilities {
+  .bg-gradient-blue {
+    @apply bg-gradient-to-r from-blue-600 to-blue-700;
+  }
+
+  .text-gradient-blue {
+    @apply bg-gradient-to-r from-blue-600 to-blue-700 bg-clip-text text-transparent;
+  }
+
+  .shadow-blue {
+    @apply shadow-lg shadow-blue-950/20;
+  }
+
+  .hover-lift-blue {
+    @apply transition-all duration-200 hover:-translate-y-1 hover:shadow-xl hover:shadow-blue-950/30;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}

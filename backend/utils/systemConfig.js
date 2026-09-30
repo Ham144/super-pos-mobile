@@ -1,0 +1,391 @@
+import nodemailer from "nodemailer";
+import SystemConfig from "../models/SystemConfig.model.js";
+
+const CONFIG_ID = "global";
+
+const fallbackEnvConfig = () => ({
+  EMAIL_HOST: process.env.EMAIL_HOST || "",
+  EMAIL_PORT: Number(process.env.EMAIL_PORT) || 587,
+  EMAIL_SECURE: process.env.EMAIL_SECURE === "true",
+  EMAIL_USER: process.env.EMAIL_USER || "",
+  EMAIL_PASS: process.env.EMAIL_PASS || "",
+  EMAIL_SERVICE: process.env.EMAIL_SERVICE || "",
+  PASS_DOWNLOAD_APK: process.env.PASS_DOWNLOAD_APK || "",
+  AD_HOST: process.env.AD_HOST || "",
+  AD_PORT: Number(process.env.AD_PORT) || 389,
+  AD_DOMAIN: process.env.AD_DOMAIN || "",
+  AD_BASE_DN: process.env.AD_BASE_DN || "",
+  WHATSAPP_API_KEY:
+    process.env.WHATSAPP_API_KEY || process.env.FONNTE_TOKEN || "",
+  PAYMENT_MIDTRANS_CLIENT_KEY: process.env.PAYMENT_MIDTRANS_CLIENT_KEY || "",
+  PAYMENT_MIDTRANS_SERVER_KEY: process.env.PAYMENT_MIDTRANS_SERVER_KEY || "",
+  MIDTRANS_IS_PRODUCTION: process.env.MIDTRANS_IS_PRODUCTION === "true",
+});
+
+const toBoolean = (value, fallback = false) => {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  return value === "true" || value === "1" || value === 1;
+};
+
+const toPort = (value, fallback = 587) => {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const preferValue = (value, fallback) => {
+  if (value === undefined || value === null || value === "") {
+    return fallback;
+  }
+
+  return value;
+};
+
+const sanitizeConfig = (config = {}, fallback = fallbackEnvConfig()) => ({
+  EMAIL_HOST: preferValue(config.EMAIL_HOST, fallback.EMAIL_HOST),
+  EMAIL_PORT: toPort(config.EMAIL_PORT, fallback.EMAIL_PORT),
+  EMAIL_SECURE: toBoolean(config.EMAIL_SECURE, fallback.EMAIL_SECURE),
+  EMAIL_USER: preferValue(config.EMAIL_USER, fallback.EMAIL_USER),
+  EMAIL_PASS: preferValue(config.EMAIL_PASS, fallback.EMAIL_PASS),
+  EMAIL_SERVICE: preferValue(config.EMAIL_SERVICE, fallback.EMAIL_SERVICE),
+  PASS_DOWNLOAD_APK: preferValue(
+    config.PASS_DOWNLOAD_APK,
+    fallback.PASS_DOWNLOAD_APK
+  ),
+  WHATSAPP_API_KEY: preferValue(config.WHATSAPP_API_KEY, fallback.WHATSAPP_API_KEY),
+  PAYMENT_MIDTRANS_CLIENT_KEY: preferValue(
+    config.PAYMENT_MIDTRANS_CLIENT_KEY,
+    fallback.PAYMENT_MIDTRANS_CLIENT_KEY,
+  ),
+  PAYMENT_MIDTRANS_SERVER_KEY: preferValue(
+    config.PAYMENT_MIDTRANS_SERVER_KEY,
+    fallback.PAYMENT_MIDTRANS_SERVER_KEY,
+  ),
+  MIDTRANS_IS_PRODUCTION: toBoolean(
+    config.MIDTRANS_IS_PRODUCTION,
+    fallback.MIDTRANS_IS_PRODUCTION,
+  ),
+});
+
+export const getSystemConfigDoc = async () => {
+  return SystemConfig.findById(CONFIG_ID).lean();
+};
+
+export const getEffectiveSystemConfig = async () => {
+  const fallback = fallbackEnvConfig();
+  const doc = await getSystemConfigDoc();
+  return {
+    ...sanitizeConfig(doc || {}, fallback),
+    AD_HOST: preferValue(doc?.AD_HOST, fallback.AD_HOST),
+    AD_PORT: toPort(doc?.AD_PORT, fallback.AD_PORT),
+    AD_DOMAIN: preferValue(doc?.AD_DOMAIN, fallback.AD_DOMAIN),
+    AD_BASE_DN: preferValue(doc?.AD_BASE_DN, fallback.AD_BASE_DN),
+    WHATSAPP_API_KEY: preferValue(doc?.WHATSAPP_API_KEY, fallback.WHATSAPP_API_KEY),
+    PAYMENT_MIDTRANS_CLIENT_KEY: preferValue(
+      doc?.PAYMENT_MIDTRANS_CLIENT_KEY,
+      fallback.PAYMENT_MIDTRANS_CLIENT_KEY,
+    ),
+    PAYMENT_MIDTRANS_SERVER_KEY: preferValue(
+      doc?.PAYMENT_MIDTRANS_SERVER_KEY,
+      fallback.PAYMENT_MIDTRANS_SERVER_KEY,
+    ),
+    MIDTRANS_IS_PRODUCTION: toBoolean(
+      doc?.MIDTRANS_IS_PRODUCTION,
+      fallback.MIDTRANS_IS_PRODUCTION,
+    ),
+  };
+};
+
+export const getActiveDirectoryConfig = async () => {
+  const config = await getEffectiveSystemConfig();
+
+  // HOST wajib. DOMAIN dibutuhkan untuk bind DOMAIN\user.
+  // BASE_DN opsional — auth.route bisa ambil dari RootDSE defaultNamingContext.
+  if (!config.AD_HOST) {
+    throw new Error("Konfigurasi Active Directory belum lengkap (AD_HOST)");
+  }
+
+  if (!config.AD_DOMAIN) {
+    throw new Error(
+      "Konfigurasi Active Directory belum lengkap (AD_DOMAIN / NetBIOS, mis. csi)",
+    );
+  }
+
+  return {
+    AD_HOST: config.AD_HOST,
+    AD_PORT: config.AD_PORT || 389,
+    AD_DOMAIN: config.AD_DOMAIN,
+    AD_BASE_DN: config.AD_BASE_DN || "",
+  };
+};
+
+export const getPublicSystemConfig = async () => {
+  const config = await getEffectiveSystemConfig();
+
+  return {
+    host: config.EMAIL_HOST,
+    port: String(config.EMAIL_PORT),
+    secure: config.EMAIL_SECURE,
+    service: config.EMAIL_SERVICE,
+    user: config.EMAIL_USER,
+    passDownloadApk: "",
+    hasEmailPass: Boolean(config.EMAIL_PASS),
+    hasDownloadApkPass: Boolean(config.PASS_DOWNLOAD_APK),
+    fonnteToken: config.WHATSAPP_API_KEY,
+  };
+};
+
+export const saveSystemConfig = async (payload = {}) => {
+  const fallback = fallbackEnvConfig();
+  const current = await getSystemConfigDoc();
+  const merged = sanitizeConfig(
+    {
+      EMAIL_HOST: preferValue(payload.EMAIL_HOST, preferValue(current?.EMAIL_HOST, fallback.EMAIL_HOST)),
+      EMAIL_PORT: preferValue(payload.EMAIL_PORT, preferValue(current?.EMAIL_PORT, fallback.EMAIL_PORT)),
+      EMAIL_SECURE:
+        payload.EMAIL_SECURE === undefined || payload.EMAIL_SECURE === ""
+          ? preferValue(current?.EMAIL_SECURE, fallback.EMAIL_SECURE)
+          : payload.EMAIL_SECURE,
+      EMAIL_USER: preferValue(payload.EMAIL_USER, preferValue(current?.EMAIL_USER, fallback.EMAIL_USER)),
+      EMAIL_PASS:
+        payload.EMAIL_PASS === undefined || payload.EMAIL_PASS === ""
+          ? preferValue(current?.EMAIL_PASS, fallback.EMAIL_PASS)
+          : payload.EMAIL_PASS,
+      EMAIL_SERVICE: preferValue(
+        payload.EMAIL_SERVICE,
+        preferValue(current?.EMAIL_SERVICE, fallback.EMAIL_SERVICE)
+      ),
+      PASS_DOWNLOAD_APK:
+        payload.PASS_DOWNLOAD_APK === undefined ||
+        payload.PASS_DOWNLOAD_APK === ""
+          ? preferValue(current?.PASS_DOWNLOAD_APK, fallback.PASS_DOWNLOAD_APK)
+          : payload.PASS_DOWNLOAD_APK,
+      WHATSAPP_API_KEY: preferValue(payload.WHATSAPP_API_KEY, preferValue(current?.WHATSAPP_API_KEY, fallback.WHATSAPP_API_KEY)),
+    },
+    fallback
+  );
+
+  const adFields = {};
+  if (payload.AD_HOST !== undefined) {
+    adFields.AD_HOST = preferValue(payload.AD_HOST, fallback.AD_HOST);
+  }
+  if (payload.AD_PORT !== undefined) {
+    adFields.AD_PORT = toPort(payload.AD_PORT, fallback.AD_PORT);
+  }
+  if (payload.AD_DOMAIN !== undefined) {
+    adFields.AD_DOMAIN = preferValue(payload.AD_DOMAIN, fallback.AD_DOMAIN);
+  }
+  if (payload.AD_BASE_DN !== undefined) {
+    adFields.AD_BASE_DN = preferValue(payload.AD_BASE_DN, fallback.AD_BASE_DN);
+  }
+  if (payload.WHATSAPP_API_KEY !== undefined) {
+    adFields.WHATSAPP_API_KEY = preferValue(payload.WHATSAPP_API_KEY, fallback.WHATSAPP_API_KEY);
+  }
+
+  return SystemConfig.findByIdAndUpdate(
+    CONFIG_ID,
+    {
+      _id: CONFIG_ID,
+      ...merged,
+      ...adFields,
+    },
+    {
+      new: true,
+      upsert: true,
+      setDefaultsOnInsert: true,
+    }
+  ).lean();
+};
+
+export const getPublicAdConfig = async () => {
+  const config = await getEffectiveSystemConfig();
+  return {
+    AD_HOST: config.AD_HOST || "",
+    AD_PORT: config.AD_PORT || 389,
+    AD_DOMAIN: config.AD_DOMAIN || "",
+    AD_BASE_DN: config.AD_BASE_DN || "",
+  };
+};
+
+export const saveAdConfig = async (payload = {}) => {
+  return saveSystemConfig({
+    AD_HOST: payload.AD_HOST,
+    AD_PORT: payload.AD_PORT,
+    AD_DOMAIN: payload.AD_DOMAIN,
+    AD_BASE_DN: payload.AD_BASE_DN,
+  });
+};
+
+export const clearAdConfig = async () => {
+  return SystemConfig.findByIdAndUpdate(
+    CONFIG_ID,
+    {
+      _id: CONFIG_ID,
+      AD_HOST: "",
+      AD_PORT: 389,
+      AD_DOMAIN: "",
+      AD_BASE_DN: "",
+    },
+    { new: true, upsert: true, setDefaultsOnInsert: true },
+  ).lean();
+};
+
+export const getPublicWhatsappConfig = async () => {
+  const config = await getEffectiveSystemConfig();
+  const token = config.WHATSAPP_API_KEY || "";
+  return {
+    WHATSAPP_API_KEY: token,
+    hasToken: Boolean(token),
+    maskedToken: token
+      ? `${token.slice(0, 4)}${"*".repeat(Math.max(token.length - 8, 0))}${token.slice(-4)}`
+      : "",
+  };
+};
+
+export const saveWhatsappConfig = async (payload = {}) => {
+  const token =
+    payload.WHATSAPP_API_KEY !== undefined
+      ? String(payload.WHATSAPP_API_KEY)
+      : undefined;
+
+  if (token === undefined) {
+    throw new Error("WHATSAPP_API_KEY wajib dikirim");
+  }
+
+  return SystemConfig.findByIdAndUpdate(
+    CONFIG_ID,
+    {
+      _id: CONFIG_ID,
+      WHATSAPP_API_KEY: token,
+    },
+    { new: true, upsert: true, setDefaultsOnInsert: true },
+  ).lean();
+};
+
+export const clearWhatsappConfig = async () => {
+  return SystemConfig.findByIdAndUpdate(
+    CONFIG_ID,
+    {
+      _id: CONFIG_ID,
+      WHATSAPP_API_KEY: "",
+    },
+    { new: true, upsert: true, setDefaultsOnInsert: true },
+  ).lean();
+};
+
+const maskSecret = (value = "") => {
+  const token = String(value || "");
+  if (!token) return "";
+  if (token.length <= 8) return "*".repeat(token.length);
+  return `${token.slice(0, 4)}${"*".repeat(Math.max(token.length - 8, 0))}${token.slice(-4)}`;
+};
+
+export const getPublicMidtransConfig = async () => {
+  const config = await getEffectiveSystemConfig();
+  const clientKey = config.PAYMENT_MIDTRANS_CLIENT_KEY || "";
+  const serverKey = config.PAYMENT_MIDTRANS_SERVER_KEY || "";
+  return {
+    PAYMENT_MIDTRANS_CLIENT_KEY: clientKey,
+    PAYMENT_MIDTRANS_SERVER_KEY: serverKey,
+    MIDTRANS_IS_PRODUCTION: Boolean(config.MIDTRANS_IS_PRODUCTION),
+    hasClientKey: Boolean(clientKey),
+    hasServerKey: Boolean(serverKey),
+    maskedClientKey: maskSecret(clientKey),
+    maskedServerKey: maskSecret(serverKey),
+  };
+};
+
+export const saveMidtransConfig = async (payload = {}) => {
+  const update = { _id: CONFIG_ID };
+  if (payload.PAYMENT_MIDTRANS_CLIENT_KEY !== undefined) {
+    update.PAYMENT_MIDTRANS_CLIENT_KEY = String(
+      payload.PAYMENT_MIDTRANS_CLIENT_KEY || "",
+    );
+  }
+  if (payload.PAYMENT_MIDTRANS_SERVER_KEY !== undefined) {
+    update.PAYMENT_MIDTRANS_SERVER_KEY = String(
+      payload.PAYMENT_MIDTRANS_SERVER_KEY || "",
+    );
+  }
+  if (payload.MIDTRANS_IS_PRODUCTION !== undefined) {
+    update.MIDTRANS_IS_PRODUCTION = toBoolean(
+      payload.MIDTRANS_IS_PRODUCTION,
+      false,
+    );
+  }
+  return SystemConfig.findByIdAndUpdate(CONFIG_ID, update, {
+    new: true,
+    upsert: true,
+    setDefaultsOnInsert: true,
+  }).lean();
+};
+
+export const clearMidtransConfig = async () => {
+  return SystemConfig.findByIdAndUpdate(
+    CONFIG_ID,
+    {
+      _id: CONFIG_ID,
+      PAYMENT_MIDTRANS_CLIENT_KEY: "",
+      PAYMENT_MIDTRANS_SERVER_KEY: "",
+      MIDTRANS_IS_PRODUCTION: false,
+    },
+    { new: true, upsert: true, setDefaultsOnInsert: true },
+  ).lean();
+};
+
+export const deleteSystemConfig = async () => {
+  await SystemConfig.deleteOne({ _id: CONFIG_ID });
+  return getPublicSystemConfig();
+};
+
+export const buildCurrentSmtpOptions = async (overrides = {}) => {
+  const config = await getEffectiveSystemConfig();
+  const host = preferValue(overrides.host, config.EMAIL_HOST);
+  const port = toPort(overrides.port, config.EMAIL_PORT);
+  const secure = toBoolean(overrides.secure, config.EMAIL_SECURE);
+  const user = preferValue(overrides.user, config.EMAIL_USER);
+  const pass = preferValue(overrides.pass, config.EMAIL_PASS);
+  const service = preferValue(overrides.service, config.EMAIL_SERVICE);
+
+  if (!host || !user || !pass) {
+    throw new Error(
+      "Konfigurasi SMTP belum lengkap. Isi EMAIL_HOST, EMAIL_USER, dan EMAIL_PASS."
+    );
+  }
+
+  const transportOptions = {
+    host,
+    port,
+    secure,
+    auth: {
+      user,
+      pass,
+    },
+    tls: {
+      rejectUnauthorized: false,
+      ciphers: "SSLv3",
+    },
+    debug: true,
+  };
+
+  if (service) {
+    transportOptions.service = service;
+  }
+
+  return transportOptions;
+};
+
+export const createCurrentSmtpTransporter = async (overrides = {}) => {
+  const transportOptions = await buildCurrentSmtpOptions(overrides);
+  return nodemailer.createTransport(transportOptions);
+};

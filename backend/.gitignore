@@ -1,0 +1,6 @@
+/files
+node_modules/
+/uploads
+.env
+env
+/deploy_backend.sh
